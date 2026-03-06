@@ -170,7 +170,7 @@ export default function Dashboard() {
         <header className="mb-6 rounded-2xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="rounded-xl bg-gradient-to-br from-white to-sky-50 p-2.5 shadow-sm ring-1 ring-slate-200/80">
+              <div className="flex items-center">
                 <img src={shenyunLogo} alt="SHENYUN" className="h-8 w-auto object-contain" />
               </div>
               <div>
