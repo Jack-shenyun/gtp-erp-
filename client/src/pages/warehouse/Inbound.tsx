@@ -139,7 +139,7 @@ export default function InboundPage() {
       },
     },
     { name: "quantity", label: "数量", type: "number", required: true, placeholder: "请输入入库数量" },
-    { name: "unit", label: "单位", type: "text", placeholder: "如：kg、支、m" },
+    { name: "unit", label: "单位", type: "text", placeholder: "自动从产品带入", disabled: true },
     {
       name: "warehouseId",
       label: "目标仓库",
@@ -306,6 +306,15 @@ export default function InboundPage() {
         }}
         onSubmit={handleSubmit}
         submitText={editingRecord ? "保存修改" : "创建入库单"}
+        onChange={(name, value) => {
+          // Issue 12: 选择产品时自动填充单位
+          if (name === "productId") {
+            const product = productsById.get(Number(value));
+            if (product?.unit) {
+              return { unit: product.unit };
+            }
+          }
+        }}
       />
 
       {viewingRecord && (

@@ -209,6 +209,8 @@ export default function ReceivablePage() {
   const trpcUtils = trpc.useUtils();
   const { data: _dbData = [], isLoading, refetch } = trpc.accountsReceivable.list.useQuery();
   const { data: salesOrders = [] } = trpc.salesOrders.list.useQuery({});
+  // Issue 10: 获取银行账户列表
+  const { data: bankAccounts = [] } = trpc.bankAccounts.list.useQuery({ status: "active" });
   const { data: salesFinanceFormMeta } = trpc.workflowSettings.getFormCatalogItem.useQuery(
     { module: "销售部", formType: "协同流程", formName: "财务协同" },
     { enabled: isSalesCollaboration },
@@ -242,6 +244,7 @@ export default function ReceivablePage() {
   const [receiptData, setReceiptData] = useState({
     amount: "",
     paymentMethod: "银行转账",
+    bankAccountId: "",
     receiptDate: "",
     remarks: "",
   });
@@ -382,6 +385,7 @@ export default function ReceivablePage() {
     setReceiptData({
       amount: String(getPendingAmount(receivable)),
       paymentMethod: "银行转账",
+      bankAccountId: "",
       receiptDate: new Date().toISOString().split("T")[0],
       remarks: "",
     });
@@ -395,6 +399,7 @@ export default function ReceivablePage() {
     setReceiptData({
       amount: String(toSafeNumber(todo.amount)),
       paymentMethod: todo.paymentMethod || "银行转账",
+      bankAccountId: "",
       receiptDate: todo.receiptDate || new Date().toISOString().split("T")[0],
       remarks: todo.remarks || "",
     });
@@ -1559,6 +1564,26 @@ export default function ReceivablePage() {
                       onChange={(e) => setReceiptData({ ...receiptData, receiptDate: e.target.value })}
                     />
                   </div>
+                </div>
+
+                {/* Issue 10: 银行账户选择 */}
+                <div className="space-y-2">
+                  <Label>收款银行账户</Label>
+                  <Select
+                    value={receiptData.bankAccountId}
+                    onValueChange={(value) => setReceiptData({ ...receiptData, bankAccountId: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="请选择收款银行账户" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(bankAccounts as any[]).map((ba: any) => (
+                        <SelectItem key={ba.id} value={String(ba.id)}>
+                          {ba.bankName} - {ba.accountName} ({ba.accountNo})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">

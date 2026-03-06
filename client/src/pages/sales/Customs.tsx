@@ -195,11 +195,118 @@ export default function CustomsPage() {
   };
 
   const handleClearance = (record: CustomsRecord) => {
+    updateMutation.mutate({
+      id: record.id,
+      data: {
+        status: "cleared",
+        clearanceDate: new Date().toISOString().split("T")[0],
+      },
+    });
     toast.success("报关已通关");
   };
 
   const handleShip = (record: CustomsRecord) => {
+    updateMutation.mutate({
+      id: record.id,
+      data: {
+        status: "shipped",
+        shippingDate: new Date().toISOString().split("T")[0],
+      },
+    });
     toast.success("货物已发运");
+  };
+
+  // Issue 9: 生成报关单据（委托书、装箱单、商业发票）
+  const handleGenerateDocument = (record: CustomsRecord, docType: "委托书" | "装箱单" | "商业发票") => {
+    const formatDate = (d: string) => d ? new Date(d).toLocaleDateString("zh-CN") : new Date().toLocaleDateString("zh-CN");
+    let content = "";
+    const symbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥" };
+    const currSymbol = symbols[record.currency] || record.currency;
+
+    if (docType === "委托书") {
+      content = [
+        "报关委托书",
+        "=".repeat(40),
+        `委托编号: ${record.declarationNo}`,
+        `委托日期: ${formatDate(record.declarationDate)}`,
+        "",
+        "一、委托方信息",
+        `公司名称: 神韵医疗科技有限公司`,
+        "",
+        "二、报关商品信息",
+        `商品名称: ${record.productName}`,
+        `数    量: ${record.quantity} ${record.unit}`,
+        `金    额: ${currSymbol}${record.amount?.toLocaleString?.() ?? "0"}`,
+        `HS编码: ${record.hsCode || "待填"}`,
+        `目的地: ${record.destination}`,
+        "",
+        "三、运输信息",
+        `运输方式: ${record.shippingMethod}`,
+        `起运港: ${record.portOfLoading || "待填"}`,
+        `目的港: ${record.portOfDischarge || "待填"}`,
+        "",
+        "四、客户信息",
+        `客户名称: ${record.customerName}`,
+        `关联订单: ${record.orderNo}`,
+        "",
+        `备注: ${record.remarks || "无"}`,
+      ].join("\n");
+    } else if (docType === "装箱单") {
+      content = [
+        "PACKING LIST (装箱单)",
+        "=".repeat(40),
+        `单据编号: PL-${record.declarationNo}`,
+        `日    期: ${formatDate(record.declarationDate)}`,
+        "",
+        `发货人: 神韵医疗科技有限公司`,
+        `收货人: ${record.customerName}`,
+        `目的地: ${record.destination}`,
+        "",
+        "-".repeat(60),
+        `品名          数量      单位      备注`,
+        "-".repeat(60),
+        `${record.productName}    ${record.quantity}    ${record.unit}    `,
+        "-".repeat(60),
+        "",
+        `运输方式: ${record.shippingMethod}`,
+        `起运港: ${record.portOfLoading || "待填"}`,
+        `目的港: ${record.portOfDischarge || "待填"}`,
+      ].join("\n");
+    } else {
+      content = [
+        "COMMERCIAL INVOICE (商业发票)",
+        "=".repeat(40),
+        `发票编号: INV-${record.declarationNo}`,
+        `日    期: ${formatDate(record.declarationDate)}`,
+        "",
+        `卖方: 神韵医疗科技有限公司`,
+        `买方: ${record.customerName}`,
+        "",
+        "-".repeat(60),
+        `品名          数量    单位    单价       金额`,
+        "-".repeat(60),
+        `${record.productName}    ${record.quantity}    ${record.unit}    ${currSymbol}${(record.amount / (record.quantity || 1)).toFixed(2)}    ${currSymbol}${record.amount?.toLocaleString?.() ?? "0"}`,
+        "-".repeat(60),
+        `合计: ${currSymbol}${record.amount?.toLocaleString?.() ?? "0"}`,
+        "",
+        `货币: ${record.currency}`,
+        `目的地: ${record.destination}`,
+        `关联订单: ${record.orderNo}`,
+        `HS编码: ${record.hsCode || "待填"}`,
+      ].join("\n");
+    }
+
+    // 下载文件
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${docType}_${record.declarationNo}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`${docType}已生成并下载`);
   };
 
   const handleSubmit = () => {
@@ -209,14 +316,20 @@ export default function CustomsPage() {
     }
 
     if (editingRecord) {
-      toast.success("报关信息已更新");
+      updateMutation.mutate({
+        id: editingRecord.id,
+        data: {
+          ...formData,
+          quantity: Number(formData.quantity),
+          amount: Number(formData.amount),
+        },
+      });
     } else {
-      const newRecord: CustomsRecord = {
-        id: Math.max(...records.map((r: any) => r.id)) + 1,
+      createMutation.mutate({
         ...formData,
-        status: formData.status as CustomsRecord["status"],
-      };
-      toast.success("报关记录创建成功");
+        quantity: Number(formData.quantity),
+        amount: Number(formData.amount),
+      } as any);
     }
     setDialogOpen(false);
   };
@@ -375,6 +488,16 @@ export default function CustomsPage() {
                                 确认发运
                               </DropdownMenuItem>
                             )}
+                            {/* Issue 9: 报关单据生成 */}
+                            <DropdownMenuItem onClick={() => handleGenerateDocument(record, "委托书")}>
+                              📄 生成委托书
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleGenerateDocument(record, "装箱单")}>
+                              📦 生成装箱单
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleGenerateDocument(record, "商业发票")}>
+                              🧾 生成商业发票
+                            </DropdownMenuItem>
                             {canDelete && (
                               <DropdownMenuItem
                                 onClick={() => handleDelete(record)}

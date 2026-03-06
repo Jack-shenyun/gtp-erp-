@@ -1398,3 +1398,79 @@ export const productionWarehouseEntries = mysqlTable("production_warehouse_entri
 });
 export type ProductionWarehouseEntry = typeof productionWarehouseEntries.$inferSelect;
 export type InsertProductionWarehouseEntry = typeof productionWarehouseEntries.$inferInsert;
+
+// ==================== 行政表单 ====================
+
+/**
+ * 加班申请表
+ */
+export const overtimeRequests = mysqlTable("overtime_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  requestNo: varchar("requestNo", { length: 50 }).notNull().unique(),
+  applicantId: int("applicantId").notNull(),
+  applicantName: varchar("applicantName", { length: 64 }).notNull(),
+  department: varchar("department", { length: 64 }).notNull(),
+  overtimeDate: date("overtimeDate").notNull(),
+  startTime: varchar("startTime", { length: 10 }).notNull(), // HH:mm
+  endTime: varchar("endTime", { length: 10 }).notNull(),
+  hours: decimal("hours", { precision: 5, scale: 1 }).notNull(),
+  overtimeType: mysqlEnum("overtimeType", ["weekday", "weekend", "holiday"]).default("weekday").notNull(),
+  reason: text("reason").notNull(),
+  status: mysqlEnum("status", ["draft", "pending", "approved", "rejected", "cancelled"]).default("draft").notNull(),
+  approvedBy: int("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OvertimeRequest = typeof overtimeRequests.$inferSelect;
+export type InsertOvertimeRequest = typeof overtimeRequests.$inferInsert;
+
+/**
+ * 请假申请表
+ */
+export const leaveRequests = mysqlTable("leave_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  requestNo: varchar("requestNo", { length: 50 }).notNull().unique(),
+  applicantId: int("applicantId").notNull(),
+  applicantName: varchar("applicantName", { length: 64 }).notNull(),
+  department: varchar("department", { length: 64 }).notNull(),
+  leaveType: mysqlEnum("leaveType", ["annual", "sick", "personal", "maternity", "paternity", "marriage", "bereavement", "other"]).default("annual").notNull(),
+  startDate: date("startDate").notNull(),
+  endDate: date("endDate").notNull(),
+  days: decimal("days", { precision: 5, scale: 1 }).notNull(),
+  reason: text("reason").notNull(),
+  status: mysqlEnum("status", ["draft", "pending", "approved", "rejected", "cancelled"]).default("draft").notNull(),
+  approvedBy: int("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type LeaveRequest = typeof leaveRequests.$inferSelect;
+export type InsertLeaveRequest = typeof leaveRequests.$inferInsert;
+
+/**
+ * 外出申请表
+ */
+export const outingRequests = mysqlTable("outing_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  requestNo: varchar("requestNo", { length: 50 }).notNull().unique(),
+  applicantId: int("applicantId").notNull(),
+  applicantName: varchar("applicantName", { length: 64 }).notNull(),
+  department: varchar("department", { length: 64 }).notNull(),
+  outingDate: date("outingDate").notNull(),
+  startTime: varchar("startTime", { length: 10 }).notNull(),
+  endTime: varchar("endTime", { length: 10 }).notNull(),
+  destination: varchar("destination", { length: 200 }).notNull(),
+  purpose: text("purpose").notNull(),
+  contactPhone: varchar("contactPhone", { length: 20 }),
+  status: mysqlEnum("status", ["draft", "pending", "approved", "rejected", "cancelled"]).default("draft").notNull(),
+  approvedBy: int("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OutingRequest = typeof outingRequests.$inferSelect;
+export type InsertOutingRequest = typeof outingRequests.$inferInsert;

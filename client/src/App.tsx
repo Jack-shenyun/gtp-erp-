@@ -14,6 +14,10 @@ import DocumentsPage from "./pages/admin/Documents";
 import PersonnelPage from "./pages/admin/Personnel";
 import TrainingPage from "./pages/admin/Training";
 import AuditPage from "./pages/admin/Audit";
+import ExpensePage from "./pages/admin/forms/Expense";
+import OvertimePage from "./pages/admin/forms/Overtime";
+import LeavePage from "./pages/admin/forms/Leave";
+import OutingPage from "./pages/admin/forms/Outing";
 
 // 招商部模块
 import DealerPage from "./pages/investment/Dealer";
@@ -98,6 +102,10 @@ function Router() {
       <Route path="/admin/personnel" component={PersonnelPage} />
       <Route path="/admin/training" component={TrainingPage} />
       <Route path="/admin/audit" component={AuditPage} />
+      <Route path="/admin/expense" component={ExpensePage} />
+      <Route path="/admin/overtime" component={OvertimePage} />
+      <Route path="/admin/leave" component={LeavePage} />
+      <Route path="/admin/outing" component={OutingPage} />
 
       {/* 招商部 */}
       <Route path="/investment/dealer" component={DealerPage} />

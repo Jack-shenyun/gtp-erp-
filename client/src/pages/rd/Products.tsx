@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { DetailDialog, DetailField } from "@/components/FormDialog";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { usePermission } from "@/hooks/usePermission";
 import DraftDrawer, { DraftItem } from "@/components/DraftDrawer";
 
 interface Product {
@@ -580,6 +581,9 @@ export default function ProductsPage() {
   const { data: productsData, isLoading, refetch } = trpc.products.list.useQuery({});
   const data: Product[] = (productsData || []) as Product[];
 
+  // Issue 15: 产品管理权限控制
+  const { canDelete, isAdmin } = usePermission();
+
   // 草稿列表
   const drafts = data.filter((d: any) => d.status === "draft");
   const draftItems: DraftItem[] = drafts.map((d: any) => ({
@@ -596,7 +600,13 @@ export default function ProductsPage() {
   const handleAdd = () => { setEditingRecord(null); setFormOpen(true); };
   const handleEdit = (record: Product) => { setEditingRecord(record); setFormOpen(true); };
   const handleView = (record: Product) => { setViewingRecord(record); setDetailOpen(true); };
-  const handleDelete = (record: Product) => { deleteMutation.mutate({ id: record.id }); };
+  const handleDelete = (record: Product) => {
+    if (!canDelete) {
+      toast.error("您没有删除权限", { description: "只有管理员可以删除产品" });
+      return;
+    }
+    deleteMutation.mutate({ id: record.id });
+  };
 
   // 草稿库操作
   const handleDraftEdit = (item: DraftItem) => {

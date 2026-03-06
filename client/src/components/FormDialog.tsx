@@ -56,6 +56,8 @@ export interface FormField {
   span?: 1 | 2; // 占据的列数，默认1
   /** 根据当前表单数据动态判断是否隐藏该字段 */
   hidden?: (formData: Record<string, any>) => boolean;
+  /** 是否禁用该字段（只读） */
+  disabled?: boolean;
 }
 
 export interface FormDialogProps {
@@ -75,8 +77,8 @@ export interface FormDialogProps {
   formId?: string;
   /** 是否启用草稿自动保存，默认true */
   enableDraft?: boolean;
-  /** 字段值变化时的回调，用于实现动态表单逻辑 */
-  onChange?: (name: string, value: any) => void;
+  /** 字段值变化时的回调，用于实现动态表单逻辑。可返回对象以更新其他字段 */
+  onChange?: (name: string, value: any) => Record<string, any> | void;
 }
 
 function normalizeDateValue(value: unknown): string {
@@ -237,9 +239,12 @@ export default function FormDialog({
         return newErrors;
       });
     }
-    // 调用外部onChange回调
+    // 调用外部onChange回调，支持返回需要更新的字段
     if (onChange) {
-      onChange(name, value);
+      const updates = onChange(name, value);
+      if (updates && typeof updates === "object") {
+        setFormData((prev) => ({ ...prev, ...updates }));
+      }
     }
   };
 
@@ -406,7 +411,8 @@ export default function FormDialog({
               placeholder={field.placeholder}
               value={value}
               onChange={(e) => handleChange(field.name, e.target.value)}
-              className={cn(error && "border-destructive")}
+              className={cn(error && "border-destructive", field.disabled && "bg-muted cursor-not-allowed")}
+              disabled={field.disabled}
             />
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>

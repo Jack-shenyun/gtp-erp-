@@ -57,9 +57,14 @@ import {
   getProductionRecords, getProductionRecordById, createProductionRecord, updateProductionRecord, deleteProductionRecord,
   getProductionRoutingCards, getProductionRoutingCardById, createProductionRoutingCard, updateProductionRoutingCard, deleteProductionRoutingCard,
   getSterilizationOrders, getSterilizationOrderById, createSterilizationOrder, updateSterilizationOrder, deleteSterilizationOrder,
-  getProductionWarehouseEntries, getProductionWarehouseEntryById, createProductionWarehouseEntry, updateProductionWarehouseEntry, deleteProductionWarehouseEntry,
+  getProductionWarehouseEntries,  getProductionWarehouseEntryById, createProductionWarehouseEntry, updateProductionWarehouseEntry, deleteProductionWarehouseEntry,
+  getOvertimeRequests, getOvertimeRequestById, createOvertimeRequest, updateOvertimeRequest, deleteOvertimeRequest,
+  getLeaveRequests, getLeaveRequestById, createLeaveRequest, updateLeaveRequest, deleteLeaveRequest,
+  getOutingRequests, getOutingRequestById, createOutingRequest, updateOutingRequest, deleteOutingRequest,
   getRecycleBinEntries,
-  removeRecycleBinEntry,
+  getLeaveRequests, getLeaveRequestById, createLeaveRequest, updateLeaveRequest, deleteLeaveRequest,
+  getOutingRequests, getOutingRequestById, createOutingRequest, updateOutingRequest, deleteOutingRequest,
+  getRecycleBinEntries,  removeRecycleBinEntry,
   restoreRecycleBinEntry,
   getNextOrderNo,
   ensureUsersVisibleAppsColumn,
@@ -71,9 +76,9 @@ import { orderApprovals, salesOrders as salesOrdersTable, users, documents,
   materialRequests as materialRequestsTable, customsDeclarations as customsTable,
   stocktakes as stocktakesTable, qualityIncidents as incidentsTable,
   samples as samplesTable, labRecords as labRecordsTable,
-  rdProjects as rdProjectsTable, audits as auditsTable,
   trainings as trainingsTable, personnel as personnelTable,
   expenseReimbursements as expensesTable, paymentRecords as paymentRecordsTable,
+  overtimeRequests as overtimeTable, leaveRequests as leaveTable, outingRequests as outingTable,
 } from "../drizzle/schema";
 import { eq, desc, sql } from "drizzle-orm";
 
@@ -1294,6 +1299,36 @@ export const appRouter = router({
           actualStartDate: actualStartDate ? new Date(actualStartDate) : undefined,
           actualEndDate: actualEndDate ? new Date(actualEndDate) : undefined,
         });
+
+        // C12: 生产完工时自动更新关联的生产计划和销售订单状态
+        if (input.data.status === "completed") {
+          try {
+            const db = await getDb();
+            if (db) {
+              const { productionPlans: ppTable, productionOrders: poTable, salesOrders: soTable } = await import("../drizzle/schema");
+              // 获取生产订单信息
+              const [prodOrder] = await db.select().from(poTable).where(eq(poTable.id, input.id)).limit(1);
+              if (prodOrder) {
+                // 更新关联的生产计划状态为 completed
+                const plans = await db.select().from(ppTable).where(eq(ppTable.productionOrderId, input.id));
+                for (const plan of plans) {
+                  await db.update(ppTable).set({ status: "completed" }).where(eq(ppTable.id, plan.id));
+                }
+                // 如果有关联销售订单，检查是否所有生产订单都完成，如果是则更新销售订单状态
+                if (prodOrder.salesOrderId) {
+                  const allProdOrders = await db.select().from(poTable).where(eq(poTable.salesOrderId, prodOrder.salesOrderId));
+                  const allCompleted = allProdOrders.every((po: any) => po.status === "completed" || po.id === input.id);
+                  if (allCompleted) {
+                    await db.update(soTable).set({ status: "ready_to_ship" }).where(eq(soTable.id, prodOrder.salesOrderId));
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error("[C12] 更新关联状态失败:", e);
+          }
+        }
+
         return { success: true };
       }),
 
@@ -1613,6 +1648,7 @@ export const appRouter = router({
           sterilizationBatchNo: z.string().optional(),
           quantity: z.string().optional(),
           unit: z.string().optional(),
+          relatedOrderId: z.number().optional(),
           remark: z.string().optional(),
         }),
       }))
@@ -3175,6 +3211,135 @@ export const appRouter = router({
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await deleteProductionWarehouseEntry(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 加班申请 ====================
+  overtimeRequests: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), department: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getOvertimeRequests(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getOvertimeRequestById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      requestNo: z.string(), applicantName: z.string(), department: z.string(),
+      overtimeDate: z.string(), startTime: z.string(), endTime: z.string(),
+      hours: z.string(), overtimeType: z.enum(["weekday", "weekend", "holiday"]),
+      reason: z.string(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const id = await createOvertimeRequest({
+        ...input,
+        applicantId: ctx.user?.id || 0,
+        overtimeDate: new Date(input.overtimeDate) as any,
+        hours: input.hours as any,
+      });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        overtimeDate: z.string().optional(), startTime: z.string().optional(), endTime: z.string().optional(),
+        hours: z.string().optional(), overtimeType: z.enum(["weekday", "weekend", "holiday"]).optional(),
+        reason: z.string().optional(), status: z.enum(["draft", "pending", "approved", "rejected", "cancelled"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { overtimeDate, hours, ...rest } = input.data;
+      await updateOvertimeRequest(input.id, {
+        ...rest,
+        overtimeDate: overtimeDate ? new Date(overtimeDate) as any : undefined,
+        hours: hours ? hours as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteOvertimeRequest(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 请假申请 ====================
+  leaveRequests: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), department: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getLeaveRequests(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getLeaveRequestById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      requestNo: z.string(), applicantName: z.string(), department: z.string(),
+      leaveType: z.enum(["annual", "sick", "personal", "maternity", "paternity", "marriage", "bereavement", "other"]),
+      startDate: z.string(), endDate: z.string(), days: z.string(),
+      reason: z.string(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const id = await createLeaveRequest({
+        ...input,
+        applicantId: ctx.user?.id || 0,
+        startDate: new Date(input.startDate) as any,
+        endDate: new Date(input.endDate) as any,
+        days: input.days as any,
+      });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        leaveType: z.enum(["annual", "sick", "personal", "maternity", "paternity", "marriage", "bereavement", "other"]).optional(),
+        startDate: z.string().optional(), endDate: z.string().optional(), days: z.string().optional(),
+        reason: z.string().optional(), status: z.enum(["draft", "pending", "approved", "rejected", "cancelled"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { startDate, endDate, days, ...rest } = input.data;
+      await updateLeaveRequest(input.id, {
+        ...rest,
+        startDate: startDate ? new Date(startDate) as any : undefined,
+        endDate: endDate ? new Date(endDate) as any : undefined,
+        days: days ? days as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteLeaveRequest(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 外出申请 ====================
+  outingRequests: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), department: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getOutingRequests(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getOutingRequestById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      requestNo: z.string(), applicantName: z.string(), department: z.string(),
+      outingDate: z.string(), startTime: z.string(), endTime: z.string(),
+      destination: z.string(), purpose: z.string(), contactPhone: z.string().optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const id = await createOutingRequest({
+        ...input,
+        applicantId: ctx.user?.id || 0,
+        outingDate: new Date(input.outingDate) as any,
+      });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        outingDate: z.string().optional(), startTime: z.string().optional(), endTime: z.string().optional(),
+        destination: z.string().optional(), purpose: z.string().optional(), contactPhone: z.string().optional(),
+        status: z.enum(["draft", "pending", "approved", "rejected", "cancelled"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { outingDate, ...rest } = input.data;
+      await updateOutingRequest(input.id, {
+        ...rest,
+        outingDate: outingDate ? new Date(outingDate) as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteOutingRequest(input.id); return { success: true };
     }),
   }),
 });

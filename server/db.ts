@@ -51,6 +51,9 @@ import {
   productionRoutingCards, InsertProductionRoutingCard, ProductionRoutingCard,
   sterilizationOrders, InsertSterilizationOrder, SterilizationOrder,
   productionWarehouseEntries, InsertProductionWarehouseEntry, ProductionWarehouseEntry,
+  overtimeRequests, InsertOvertimeRequest, OvertimeRequest,
+  leaveRequests, InsertLeaveRequest, LeaveRequest,
+  outingRequests, InsertOutingRequest, OutingRequest,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -456,6 +459,9 @@ const RESTORABLE_TABLES: Record<string, any> = {
   production_routing_cards: productionRoutingCards,
   sterilization_orders: sterilizationOrders,
   production_warehouse_entries: productionWarehouseEntries,
+  overtime_requests: overtimeRequests,
+  leave_requests: leaveRequests,
+  outing_requests: outingRequests,
 };
 
 function normalizeSnapshotValue(value: unknown): unknown {
@@ -1974,7 +1980,53 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
   if (!db) throw new Error("Database not available");
   await ensureInventoryTransactionColumns(db);
   const result = await db.insert(inventoryTransactions).values(data);
-  return result[0].insertId;
+  const txId = result[0].insertId;
+
+  // C1: 自动更新库存数量
+  try {
+    const inTypes = ["purchase_in", "production_in", "return_in", "other_in"];
+    const outTypes = ["production_out", "sales_out", "return_out", "other_out"];
+    const qty = parseFloat(String(data.quantity)) || 0;
+    if (qty > 0 && (inTypes.includes(data.type) || outTypes.includes(data.type))) {
+      const isIn = inTypes.includes(data.type);
+      // 查找现有库存记录（按仓库+产品+批次匹配）
+      const conditions: any[] = [eq(inventory.warehouseId, data.warehouseId)];
+      if (data.productId) conditions.push(eq(inventory.productId, data.productId));
+      if (data.batchNo) conditions.push(eq(inventory.batchNo, data.batchNo));
+      const existing = await db.select().from(inventory).where(and(...conditions)).limit(1);
+      if (existing.length > 0) {
+        const currentQty = parseFloat(String(existing[0].quantity)) || 0;
+        const newQty = isIn ? currentQty + qty : Math.max(0, currentQty - qty);
+        await db.update(inventory).set({ quantity: String(newQty) }).where(eq(inventory.id, existing[0].id));
+        // 更新流水的 beforeQty 和 afterQty
+        await db.update(inventoryTransactions).set({
+          beforeQty: String(currentQty),
+          afterQty: String(newQty),
+          inventoryId: existing[0].id,
+        }).where(eq(inventoryTransactions.id, txId));
+      } else if (isIn) {
+        // 入库时如果没有库存记录，自动创建
+        const newInvResult = await db.insert(inventory).values({
+          warehouseId: data.warehouseId,
+          productId: data.productId,
+          itemName: data.itemName,
+          batchNo: data.batchNo,
+          quantity: String(qty),
+          unit: data.unit,
+          status: "qualified",
+        });
+        await db.update(inventoryTransactions).set({
+          beforeQty: "0",
+          afterQty: String(qty),
+          inventoryId: newInvResult[0].insertId,
+        }).where(eq(inventoryTransactions.id, txId));
+      }
+    }
+  } catch (e) {
+    console.error("自动更新库存失败:", e);
+  }
+
+  return txId;
 }
 
 export async function updateInventoryTransaction(id: number, data: Partial<InsertInventoryTransaction>) {
@@ -4507,6 +4559,133 @@ export async function deleteProductionWarehouseEntry(id: number, deletedBy?: num
     id,
     entityType: "生产入库申请",
     sourceTable: "production_warehouse_entries",
+    deletedBy,
+  });
+}
+
+
+// ==================== 加班申请 CRUD ====================
+export async function getOvertimeRequests(params?: { search?: string; status?: string; department?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (params?.search) conditions.push(or(like(overtimeRequests.requestNo, `%${params.search}%`), like(overtimeRequests.applicantName, `%${params.search}%`)));
+  if (params?.status) conditions.push(eq(overtimeRequests.status, params.status as any));
+  if (params?.department) conditions.push(eq(overtimeRequests.department, params.department));
+  let query = db.select().from(overtimeRequests);
+  if (conditions.length > 0) query = query.where(and(...conditions)) as typeof query;
+  return await query.orderBy(desc(overtimeRequests.createdAt)).limit(params?.limit || 100).offset(params?.offset || 0);
+}
+export async function getOvertimeRequestById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(overtimeRequests).where(eq(overtimeRequests.id, id)).limit(1);
+  return result[0];
+}
+export async function createOvertimeRequest(data: InsertOvertimeRequest) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(overtimeRequests).values(data);
+  return result[0].insertId;
+}
+export async function updateOvertimeRequest(id: number, data: Partial<InsertOvertimeRequest>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(overtimeRequests).set(data).where(eq(overtimeRequests.id, id));
+}
+export async function deleteOvertimeRequest(id: number, deletedBy?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await deleteSingleWithRecycle(db, {
+    table: overtimeRequests,
+    idColumn: overtimeRequests.id,
+    id,
+    entityType: "加班申请",
+    sourceTable: "overtime_requests",
+    deletedBy,
+  });
+}
+
+// ==================== 请假申请 CRUD ====================
+export async function getLeaveRequests(params?: { search?: string; status?: string; department?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (params?.search) conditions.push(or(like(leaveRequests.requestNo, `%${params.search}%`), like(leaveRequests.applicantName, `%${params.search}%`)));
+  if (params?.status) conditions.push(eq(leaveRequests.status, params.status as any));
+  if (params?.department) conditions.push(eq(leaveRequests.department, params.department));
+  let query = db.select().from(leaveRequests);
+  if (conditions.length > 0) query = query.where(and(...conditions)) as typeof query;
+  return await query.orderBy(desc(leaveRequests.createdAt)).limit(params?.limit || 100).offset(params?.offset || 0);
+}
+export async function getLeaveRequestById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(leaveRequests).where(eq(leaveRequests.id, id)).limit(1);
+  return result[0];
+}
+export async function createLeaveRequest(data: InsertLeaveRequest) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(leaveRequests).values(data);
+  return result[0].insertId;
+}
+export async function updateLeaveRequest(id: number, data: Partial<InsertLeaveRequest>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(leaveRequests).set(data).where(eq(leaveRequests.id, id));
+}
+export async function deleteLeaveRequest(id: number, deletedBy?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await deleteSingleWithRecycle(db, {
+    table: leaveRequests,
+    idColumn: leaveRequests.id,
+    id,
+    entityType: "请假申请",
+    sourceTable: "leave_requests",
+    deletedBy,
+  });
+}
+
+// ==================== 外出申请 CRUD ====================
+export async function getOutingRequests(params?: { search?: string; status?: string; department?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (params?.search) conditions.push(or(like(outingRequests.requestNo, `%${params.search}%`), like(outingRequests.applicantName, `%${params.search}%`)));
+  if (params?.status) conditions.push(eq(outingRequests.status, params.status as any));
+  if (params?.department) conditions.push(eq(outingRequests.department, params.department));
+  let query = db.select().from(outingRequests);
+  if (conditions.length > 0) query = query.where(and(...conditions)) as typeof query;
+  return await query.orderBy(desc(outingRequests.createdAt)).limit(params?.limit || 100).offset(params?.offset || 0);
+}
+export async function getOutingRequestById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(outingRequests).where(eq(outingRequests.id, id)).limit(1);
+  return result[0];
+}
+export async function createOutingRequest(data: InsertOutingRequest) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(outingRequests).values(data);
+  return result[0].insertId;
+}
+export async function updateOutingRequest(id: number, data: Partial<InsertOutingRequest>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(outingRequests).set(data).where(eq(outingRequests.id, id));
+}
+export async function deleteOutingRequest(id: number, deletedBy?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await deleteSingleWithRecycle(db, {
+    table: outingRequests,
+    idColumn: outingRequests.id,
+    id,
+    entityType: "外出申请",
+    sourceTable: "outing_requests",
     deletedBy,
   });
 }

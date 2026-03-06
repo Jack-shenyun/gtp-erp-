@@ -94,6 +94,9 @@ import {
   ArrowRightLeft,
   Flame,
   PackageOpen,
+  Clock,
+  Calendar,
+  MapPin,
 } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -118,6 +121,10 @@ const menuConfig = [
       { icon: Users, label: "人事管理", path: "/admin/personnel" },
       { icon: GraduationCap, label: "培训管理", path: "/admin/training" },
       { icon: FileSearch, label: "内审管理", path: "/admin/audit" },
+      { icon: Receipt, label: "费用报销", path: "/admin/expense" },
+      { icon: Clock, label: "加班申请", path: "/admin/overtime" },
+      { icon: Calendar, label: "请假申请", path: "/admin/leave" },
+      { icon: MapPin, label: "外出申请", path: "/admin/outing" },
     ],
   },
   {

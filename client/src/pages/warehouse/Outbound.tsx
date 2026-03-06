@@ -40,6 +40,8 @@ export default function OutboundPage() {
   // 获取仓库列表
   const { data: warehouseList = [] } = trpc.warehouses.list.useQuery({ status: "active" });
   const { data: productList = [] } = trpc.products.list.useQuery({ limit: 1000 });
+  // C2: 获取已审批的销售订单列表，用于关联出库
+  const { data: salesOrderList = [] } = trpc.salesOrders.list.useQuery({ status: "approved" });
 
   // 获取出库记录（只查出库类型）
   const { data: rawData = [], refetch } = trpc.inventoryTransactions.list.useQuery({
@@ -55,6 +57,12 @@ export default function OutboundPage() {
   const productOptions = products.map((p) => ({
     value: String(p.id),
     label: `${p.code} - ${p.name}${p.specification ? `（${p.specification}）` : ""}`,
+  }));
+
+  // C2: 销售订单选项
+  const salesOrderOptions = (salesOrderList as any[]).map((o: any) => ({
+    value: String(o.id),
+    label: `${o.orderNo}${o.customerName ? ` - ${o.customerName}` : ""}`,
   }));
 
   const createMutation = trpc.inventoryTransactions.create.useMutation({
@@ -77,6 +85,13 @@ export default function OutboundPage() {
     return wh ? wh.name : `仓库${warehouseId}`;
   };
 
+  // C2: 获取关联订单号
+  const getRelatedOrderNo = (relatedOrderId: number | null | undefined) => {
+    if (!relatedOrderId) return "-";
+    const order = (salesOrderList as any[]).find((o: any) => o.id === relatedOrderId);
+    return order ? order.orderNo : `#${relatedOrderId}`;
+  };
+
   const getFormFields = (): FormField[] => [
     {
       name: "documentNo",
@@ -91,6 +106,16 @@ export default function OutboundPage() {
       type: "select",
       required: true,
       options: outboundTypeOptions,
+    },
+    // C2: 销售出库时显示关联销售订单选择
+    {
+      name: "relatedOrderId",
+      label: "关联销售订单",
+      type: "select",
+      required: false,
+      options: salesOrderOptions,
+      placeholder: "请选择关联的销售订单",
+      hidden: (formData) => formData.type !== "sales_out",
     },
     {
       name: "productId",
@@ -113,7 +138,7 @@ export default function OutboundPage() {
       },
     },
     { name: "quantity", label: "数量", type: "number", required: true, placeholder: "请输入出库数量" },
-    { name: "unit", label: "单位", type: "text", placeholder: "如：kg、支、m" },
+    { name: "unit", label: "单位", type: "text", placeholder: "自动从产品带入", disabled: true },
     {
       name: "warehouseId",
       label: "出库仓库",
@@ -146,6 +171,13 @@ export default function OutboundPage() {
       title: "出库仓库",
       width: "110px",
       render: (v: number) => getWarehouseName(v),
+    },
+    // C2: 显示关联订单号
+    {
+      key: "relatedOrderId",
+      title: "关联订单",
+      width: "130px",
+      render: (v: number) => v ? <Badge variant="secondary">{getRelatedOrderNo(v)}</Badge> : <span className="text-muted-foreground">-</span>,
     },
     {
       key: "createdAt",
@@ -191,7 +223,7 @@ export default function OutboundPage() {
       return;
     }
 
-    const payload = {
+    const payload: any = {
       productId: selectedProduct.id,
       warehouseId: Number(formData.warehouseId),
       type: formData.type as any,
@@ -202,6 +234,8 @@ export default function OutboundPage() {
       quantity: String(formData.quantity || "0"),
       unit: formData.unit || selectedProduct.unit || undefined,
       remark: formData.remark || undefined,
+      // C2: 关联销售订单
+      relatedOrderId: formData.relatedOrderId ? Number(formData.relatedOrderId) : undefined,
     };
 
     if (editingRecord) {
@@ -216,6 +250,7 @@ export default function OutboundPage() {
           quantity: payload.quantity,
           unit: payload.unit,
           remark: payload.remark,
+          relatedOrderId: payload.relatedOrderId,
         },
       });
     } else {
@@ -234,6 +269,8 @@ export default function OutboundPage() {
       value: `${parseFloat(String(record.quantity || 0))?.toLocaleString?.() ?? "0"} ${record.unit || ""}`,
     },
     { label: "出库仓库", value: getWarehouseName(record.warehouseId) },
+    // C2: 显示关联订单
+    { label: "关联销售订单", value: getRelatedOrderNo(record.relatedOrderId) },
     {
       label: "出库时间",
       value: record.createdAt ? new Date(record.createdAt).toLocaleString("zh-CN") : "-",
@@ -274,12 +311,22 @@ export default function OutboundPage() {
           ...editingRecord,
           productId: getInitialProductId(editingRecord),
           warehouseId: String(editingRecord.warehouseId),
+          relatedOrderId: editingRecord.relatedOrderId ? String(editingRecord.relatedOrderId) : "",
         } : {
           documentNo: `OUT-${new Date().getFullYear()}-${String(data.length + 1).padStart(4, "0")}`,
           type: "sales_out",
         }}
         onSubmit={handleSubmit}
         submitText={editingRecord ? "保存修改" : "创建出库单"}
+        onChange={(name, value) => {
+          // Issue 12: 选择产品时自动填充单位
+          if (name === "productId") {
+            const product = productsById.get(Number(value));
+            if (product?.unit) {
+              return { unit: product.unit };
+            }
+          }
+        }}
       />
 
       {viewingRecord && (
