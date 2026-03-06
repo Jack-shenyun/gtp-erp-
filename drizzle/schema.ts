@@ -1308,9 +1308,11 @@ export const materialRequisitionOrders = mysqlTable("material_requisition_orders
   requisitionNo: varchar("requisitionNo", { length: 50 }).notNull().unique(),
   productionOrderId: int("productionOrderId"), // 关联生产任务
   productionOrderNo: varchar("productionOrderNo", { length: 50 }),
+  productionPlanId: int("productionPlanId"),   // 关联生产计划
   warehouseId: int("warehouseId"),             // 领料仓库
+  requisitionDate: date("requisitionDate"),    // 领料日期
+  requiredDate: date("requiredDate"),          // 需求日期
   applicantId: int("applicantId"),             // 申请人
-  applicationDate: date("applicationDate"),
   status: mysqlEnum("status", ["draft", "pending", "approved", "issued", "rejected"]).default("draft").notNull(),
   items: text("items"),                        // JSON存储物料明细行
   remark: text("remark"),                      // 备注

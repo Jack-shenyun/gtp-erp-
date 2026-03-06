@@ -3123,15 +3123,15 @@ export const appRouter = router({
       productionOrderNo: z.string().optional(),
       warehouseId: z.number().optional(),
       applicantId: z.number().optional(),
-      applicationDate: z.string().optional(),
+      requisitionDate: z.string().optional(),
       status: z.enum(["draft", "pending", "approved", "issued", "rejected"]).optional(),
       items: z.string().optional(),
       remark: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
-      const { applicationDate, ...rest } = input;
+      const { requisitionDate, ...rest } = input;
       const id = await createMaterialRequisitionOrder({
         ...rest,
-        applicationDate: applicationDate ? new Date(applicationDate) as any : undefined,
+        requisitionDate: requisitionDate ? new Date(requisitionDate) as any : undefined,
         createdBy: ctx.user?.id,
       });
       return { id };

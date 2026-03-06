@@ -408,7 +408,7 @@ export default function MaterialRequisitionPage() {
       productionOrderId: formData.productionOrderId ? Number(formData.productionOrderId) : undefined,
       productionOrderNo: formData.productionOrderNo || undefined,
       warehouseId: formData.warehouseId ? Number(formData.warehouseId) : undefined,
-      applicationDate: formData.applicationDate || undefined,
+      requisitionDate: formData.applicationDate || undefined,
       status: "draft" as const,
       items: itemsJson,
       remark: remarkMeta,
