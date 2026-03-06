@@ -1,0 +1,3148 @@
+import { z } from "zod";
+import { randomBytes, scryptSync } from "node:crypto";
+import { COOKIE_NAME } from "@shared/const";
+import { normalizePaymentCondition } from "@shared/paymentTerms";
+import { ATTACHMENT_EXTENSIONS, buildUploadFolderName, normalizeDepartmentForUpload } from "@shared/uploadPolicy";
+import { getSessionCookieOptions } from "./_core/cookies";
+import { systemRouter } from "./_core/systemRouter";
+import { adminProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { saveAttachmentFile } from "./attachmentStorage";
+import {
+  clearExpiredRecycleBinEntries,
+  getProducts, getProductById, createProduct, updateProduct, deleteProduct,
+  getNextProductCode, isProductCodeExists,
+  deleteDocument,
+  deleteUser,
+  getCustomers, getCustomerById, createCustomer, updateCustomer, deleteCustomer, getNextCustomerCode, enrichCustomerLogoDomain,
+  getSuppliers, getSupplierById, createSupplier, updateSupplier, deleteSupplier,
+  getSalesOrders, getSalesOrderById, getSalesOrderItems, createSalesOrder, updateSalesOrder, deleteSalesOrder, getNextSalesOrderNo, getLastSalePrices,
+  getPurchaseOrders, getPurchaseOrderById, getPurchaseOrderItems, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder,
+  getProductionOrders, getProductionOrderById, createProductionOrder, updateProductionOrder, deleteProductionOrder,
+  getInventory, getInventoryById, createInventory, updateInventory, deleteInventory,
+  getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse,
+  getInventoryTransactions, createInventoryTransaction, updateInventoryTransaction, deleteInventoryTransaction,
+  getOperationLogs, createOperationLog, clearOperationLogs,
+  getQualityInspections, getQualityInspectionById, createQualityInspection, updateQualityInspection, deleteQualityInspection,
+  getBomByProductId, createBomItem, updateBomItem, deleteBomItem,
+  getDashboardStats,
+  getSalesOrderApprovalState,
+  getWorkflowCenterData,
+  // 新增
+  getBankAccounts, getBankAccountById, createBankAccount, updateBankAccount, deleteBankAccount,
+  getExchangeRates, createExchangeRate, updateExchangeRate, deleteExchangeRate,
+  getPaymentTerms, createPaymentTerm, updatePaymentTerm, deletePaymentTerm,
+  getMaterialRequests, getMaterialRequestById, getMaterialRequestItems, createMaterialRequest, updateMaterialRequest, deleteMaterialRequest,
+  getExpenseReimbursements, getExpenseReimbursementById, createExpenseReimbursement, updateExpenseReimbursement, deleteExpenseReimbursement,
+  getPaymentRecords, createPaymentRecord, deletePaymentRecord,
+  getCustomsDeclarations, getCustomsDeclarationById, createCustomsDeclaration, updateCustomsDeclaration, deleteCustomsDeclaration,
+  getDepartments, getDepartmentById, createDepartment, updateDepartment, deleteDepartment,
+  getCodeRules, createCodeRule, updateCodeRule, deleteCodeRule,
+  getCompanyInfo, updateCompanyInfo,
+  getWorkflowFormCatalog, getWorkflowFormCatalogItem, setWorkflowFormCatalogApprovalEnabled,
+  getWorkflowTemplates, getWorkflowTemplateById, createWorkflowTemplate, updateWorkflowTemplate, deleteWorkflowTemplate,
+  getPersonnel, getPersonnelById, createPersonnel, updatePersonnel, deletePersonnel,
+  getTrainings, getTrainingById, createTraining, updateTraining, deleteTraining,
+  getAudits, getAuditById, createAudit, updateAudit, deleteAudit,
+  getRdProjects, getRdProjectById, createRdProject, updateRdProject, deleteRdProject,
+  getStocktakes, getStocktakeById, createStocktake, updateStocktake, deleteStocktake,
+  getQualityIncidents, getQualityIncidentById, createQualityIncident, updateQualityIncident, deleteQualityIncident,
+  getSamples, getSampleById, createSample, updateSample, deleteSample,
+  getLabRecords, getLabRecordById, createLabRecord, updateLabRecord, deleteLabRecord,
+  getAccountsReceivable, getAccountsReceivableById, createAccountsReceivable, updateAccountsReceivable, deleteAccountsReceivable,
+  getAccountsPayable, getAccountsPayableById, createAccountsPayable, updateAccountsPayable, deleteAccountsPayable,
+  getDealerQualifications, getDealerQualificationById, createDealerQualification, updateDealerQualification, deleteDealerQualification,
+  getEquipment, getEquipmentById, createEquipment, updateEquipment, deleteEquipment,
+  getProductionPlans, getProductionPlanById, createProductionPlan, updateProductionPlan, deleteProductionPlan,
+  getMaterialRequisitionOrders, getMaterialRequisitionOrderById, createMaterialRequisitionOrder, updateMaterialRequisitionOrder, deleteMaterialRequisitionOrder,
+  getProductionRecords, getProductionRecordById, createProductionRecord, updateProductionRecord, deleteProductionRecord,
+  getProductionRoutingCards, getProductionRoutingCardById, createProductionRoutingCard, updateProductionRoutingCard, deleteProductionRoutingCard,
+  getSterilizationOrders, getSterilizationOrderById, createSterilizationOrder, updateSterilizationOrder, deleteSterilizationOrder,
+  getProductionWarehouseEntries, getProductionWarehouseEntryById, createProductionWarehouseEntry, updateProductionWarehouseEntry, deleteProductionWarehouseEntry,
+  getRecycleBinEntries,
+  removeRecycleBinEntry,
+  restoreRecycleBinEntry,
+  getNextOrderNo,
+  ensureUsersVisibleAppsColumn,
+} from "./db";
+import { getDb } from "./db";
+import { orderApprovals, salesOrders as salesOrdersTable, users, documents,
+  accountsReceivable as accountsReceivableTable,
+  customers as customersTable,
+  materialRequests as materialRequestsTable, customsDeclarations as customsTable,
+  stocktakes as stocktakesTable, qualityIncidents as incidentsTable,
+  samples as samplesTable, labRecords as labRecordsTable,
+  rdProjects as rdProjectsTable, audits as auditsTable,
+  trainings as trainingsTable, personnel as personnelTable,
+  expenseReimbursements as expensesTable, paymentRecords as paymentRecordsTable,
+} from "../drizzle/schema";
+import { eq, desc, sql } from "drizzle-orm";
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return `scrypt$${salt}$${hash}`;
+}
+
+function parseDepartments(raw: unknown): string[] {
+  return String(raw ?? "")
+    .split(/[,\uFF0C;；/、|\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function canViewAllSalesData(user: any): boolean {
+  return user?.role === "admin" || String(user?.name ?? "").trim() === "刘源";
+}
+
+function isSalesDepartmentUser(user: any): boolean {
+  return parseDepartments(user?.department).includes("销售部");
+}
+
+const PREPAY_RATIO_MARKER = "[PREPAY_RATIO]";
+
+function parsePrepayRatioFromRemark(remark: unknown): number {
+  const text = String(remark ?? "");
+  const markerLine = text
+    .split("\n")
+    .find((line) => line.startsWith(PREPAY_RATIO_MARKER));
+  if (!markerLine) return 30;
+  const ratioRaw = markerLine.slice(PREPAY_RATIO_MARKER.length).trim();
+  const ratio = Number(ratioRaw);
+  if (!Number.isFinite(ratio)) return 30;
+  return Math.min(100, Math.max(0, ratio));
+}
+
+function round2(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
+function toDateOnly(value: unknown): string {
+  if (!value) return new Date().toISOString().slice(0, 10);
+  if (typeof value === "string") {
+    return value.slice(0, 10);
+  }
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+
+function safeFileSegment(value: string): string {
+  return String(value ?? "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function toCustomerShortName(name: string): string {
+  const raw = String(name ?? "").trim();
+  if (!raw) return "客户";
+  const stripped = raw
+    .replace(/(有限责任公司|股份有限公司|有限公司|集团|Inc\.?|Incorporated|Co\.,?\s*Ltd\.?|Ltd\.?)/gi, "")
+    .trim();
+  const base = stripped || raw;
+  return base.slice(0, 12);
+}
+
+function normalizeSyncErrorMessage(error: unknown): string {
+  const err = error as any;
+  const message = String(err?.message ?? error ?? "");
+  const code = String(err?.code ?? "");
+  const errno = err?.errno;
+  const sqlState = String(err?.sqlState ?? "");
+  if (!message) return "未知错误";
+  if (message.includes("Cannot add or update a child row") || code === "ER_NO_REFERENCED_ROW_2") {
+    return `关联数据不存在（客户或订单）[${code || errno || "FK"}]`;
+  }
+  if (message.includes("Duplicate entry") || code === "ER_DUP_ENTRY") {
+    return `记录已存在[${code || errno || "DUP"}]`;
+  }
+  if (message.includes("Incorrect date value") || code === "ER_TRUNCATED_WRONG_VALUE") {
+    return `日期格式错误[${code || errno || "DATE"}]`;
+  }
+  if (message.includes("Data truncated") || code === "WARN_DATA_TRUNCATED") {
+    return `字段值不符合数据库格式[${code || errno || "TRUNC"}]`;
+  }
+  if (message.includes("Unknown column") || code === "ER_BAD_FIELD_ERROR") {
+    return `数据库字段不匹配[${code || errno || "COLUMN"}]`;
+  }
+  const short = message.slice(0, 80).replace(/\s+/g, " ");
+  const tag = [code, errno, sqlState].filter(Boolean).join("/");
+  return tag ? `数据库写入失败[${tag}] ${short}` : `数据库写入失败 ${short}`;
+}
+
+async function syncOneReceivableFromSalesOrder(orderId: number, operatorId?: number) {
+  const db = await getDb();
+  if (!db) return { created: false, reason: "数据库不可用", orderNo: "" };
+
+  const [existing] = await db
+    .select({ id: accountsReceivableTable.id })
+    .from(accountsReceivableTable)
+    .where(eq(accountsReceivableTable.salesOrderId, orderId))
+    .limit(1);
+  if (existing) return { created: false, reason: "已存在应收记录", orderNo: "" };
+
+  const [order] = await db
+    .select({
+      id: salesOrdersTable.id,
+      orderNo: salesOrdersTable.orderNo,
+      customerId: salesOrdersTable.customerId,
+      orderDate: salesOrdersTable.orderDate,
+      deliveryDate: salesOrdersTable.deliveryDate,
+      totalAmount: salesOrdersTable.totalAmount,
+      totalAmountBase: salesOrdersTable.totalAmountBase,
+      currency: salesOrdersTable.currency,
+      exchangeRate: salesOrdersTable.exchangeRate,
+      paymentMethod: salesOrdersTable.paymentMethod,
+      remark: salesOrdersTable.remark,
+      status: salesOrdersTable.status,
+      createdBy: salesOrdersTable.createdBy,
+    })
+    .from(salesOrdersTable)
+    .where(eq(salesOrdersTable.id, orderId))
+    .limit(1);
+
+  if (!order) return { created: false, reason: "订单不存在", orderNo: "" };
+  if (!order.customerId) return { created: false, reason: "客户为空", orderNo: String(order.orderNo || "") };
+  if (order.status === "cancelled") return { created: false, reason: "订单已取消", orderNo: String(order.orderNo || "") };
+  const [customerExists] = await db
+    .select({ id: customersTable.id })
+    .from(customersTable)
+    .where(eq(customersTable.id, order.customerId))
+    .limit(1);
+  if (!customerExists) {
+    return { created: false, reason: `客户不存在(${order.customerId})`, orderNo: String(order.orderNo || "") };
+  }
+
+  const paymentMethod = normalizePaymentCondition(order.paymentMethod);
+  const totalAmount = Number(order.totalAmount ?? 0);
+  const exchangeRate = Number(order.exchangeRate ?? 1) > 0 ? Number(order.exchangeRate) : 1;
+  const totalAmountBase = Number(order.totalAmountBase ?? totalAmount * exchangeRate);
+  if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+    return { created: false, reason: "订单金额<=0", orderNo: String(order.orderNo || "") };
+  }
+
+  const prepayRatio = paymentMethod === "预付款" ? parsePrepayRatioFromRemark(order.remark) : 100;
+  const ratio = prepayRatio / 100;
+  const receivableAmount = totalAmount * ratio;
+  const receivableAmountBase = totalAmountBase * ratio;
+
+  const dueDate = paymentMethod === "账期支付"
+    ? (order.deliveryDate ?? order.orderDate)
+    : order.orderDate;
+
+  const ratioRemark = paymentMethod === "预付款" ? `预付款比例：${prepayRatio}%` : "";
+  const baseRemark = String(order.remark ?? "")
+    .split("\n")
+    .filter((line) => !line.startsWith(PREPAY_RATIO_MARKER))
+    .join("\n")
+    .trim();
+  const mergedRemark = [ratioRemark, baseRemark].filter(Boolean).join(" | ");
+
+  try {
+    // 使用最小字段原生 SQL 写入，规避 drizzle 在不同 DATE/DECIMAL 映射下的兼容问题
+    await db.execute(sql`
+      INSERT INTO accounts_receivable
+      (invoiceNo, customerId, salesOrderId, amount, currency, invoiceDate, dueDate, paymentMethod, remark)
+      VALUES
+      (${`AR-${order.orderNo}`}, ${order.customerId}, ${order.id}, ${round2(receivableAmount)}, ${order.currency || "CNY"}, ${toDateOnly(order.orderDate)}, ${toDateOnly(dueDate)}, ${paymentMethod || null}, ${mergedRemark || null})
+    `);
+    return { created: true, reason: "", orderNo: String(order.orderNo || "") };
+  } catch (error: any) {
+    // 再次兜底：进一步缩减字段
+    try {
+      await db.execute(sql`
+        INSERT INTO accounts_receivable
+        (invoiceNo, customerId, salesOrderId, amount)
+        VALUES
+        (${`AR-${order.orderNo}`}, ${order.customerId}, ${order.id}, ${round2(receivableAmount)})
+      `);
+      return { created: true, reason: "", orderNo: String(order.orderNo || "") };
+    } catch (fallbackError: any) {
+      return {
+        created: false,
+        orderNo: String(order.orderNo || ""),
+        reason: normalizeSyncErrorMessage(fallbackError || error),
+      };
+    }
+  }
+}
+
+async function syncMissingReceivablesFromSalesOrders(operatorId?: number) {
+  const db = await getDb();
+  if (!db) return { createdCount: 0, totalCount: 0, failed: [{ orderNo: "", reason: "数据库不可用" }] };
+  const orders = await db
+    .select({ id: salesOrdersTable.id })
+    .from(salesOrdersTable)
+    .where(sql`${salesOrdersTable.status} != 'cancelled'`);
+  let createdCount = 0;
+  const failed: Array<{ orderNo: string; reason: string }> = [];
+  for (const row of orders) {
+    const result = await syncOneReceivableFromSalesOrder(row.id, operatorId);
+    if (result.created) {
+      createdCount += 1;
+      continue;
+    }
+    if (result.reason && result.reason !== "已存在应收记录") {
+      failed.push({ orderNo: result.orderNo || String(row.id), reason: result.reason });
+    }
+  }
+  return { createdCount, totalCount: orders.length, failed };
+}
+
+async function normalizePaymentConditionDataInDb() {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.execute(sql`
+    UPDATE customers
+    SET paymentTerms = CASE
+      WHEN paymentTerms IS NULL OR paymentTerms = '' THEN paymentTerms
+      WHEN paymentTerms IN ('预付款', '先款后货', '货到付款', '账期支付') THEN paymentTerms
+      WHEN paymentTerms LIKE '%预付%' THEN '预付款'
+      WHEN paymentTerms LIKE '%货到付款%' OR paymentTerms LIKE '%到付%' THEN '货到付款'
+      WHEN paymentTerms LIKE '%月结%' OR paymentTerms LIKE '%账期%' OR paymentTerms LIKE '%赊%' THEN '账期支付'
+      WHEN paymentTerms LIKE '%现结%' OR paymentTerms LIKE '%现款%' OR paymentTerms LIKE '%先款%' THEN '先款后货'
+      ELSE paymentTerms
+    END
+  `);
+
+  await db.execute(sql`
+    UPDATE suppliers
+    SET paymentTerms = CASE
+      WHEN paymentTerms IS NULL OR paymentTerms = '' THEN paymentTerms
+      WHEN paymentTerms IN ('预付款', '先款后货', '货到付款', '账期支付') THEN paymentTerms
+      WHEN paymentTerms LIKE '%预付%' THEN '预付款'
+      WHEN paymentTerms LIKE '%货到付款%' OR paymentTerms LIKE '%到付%' THEN '货到付款'
+      WHEN paymentTerms LIKE '%月结%' OR paymentTerms LIKE '%账期%' OR paymentTerms LIKE '%赊%' THEN '账期支付'
+      WHEN paymentTerms LIKE '%现结%' OR paymentTerms LIKE '%现款%' OR paymentTerms LIKE '%先款%' THEN '先款后货'
+      ELSE paymentTerms
+    END
+  `);
+
+  await db.execute(sql`
+    UPDATE sales_orders
+    SET paymentMethod = CASE
+      WHEN paymentMethod IS NULL OR paymentMethod = '' THEN paymentMethod
+      WHEN paymentMethod IN ('预付款', '先款后货', '货到付款', '账期支付') THEN paymentMethod
+      WHEN paymentMethod LIKE '%预付%' THEN '预付款'
+      WHEN paymentMethod LIKE '%货到付款%' OR paymentMethod LIKE '%到付%' THEN '货到付款'
+      WHEN paymentMethod LIKE '%月结%' OR paymentMethod LIKE '%账期%' OR paymentMethod LIKE '%赊%' THEN '账期支付'
+      WHEN paymentMethod LIKE '%现结%' OR paymentMethod LIKE '%现款%' OR paymentMethod LIKE '%先款%' THEN '先款后货'
+      ELSE paymentMethod
+    END
+  `);
+}
+
+export const appRouter = router({
+  system: systemRouter,
+  auth: router({
+    me: publicProcedure.query(opts => opts.ctx.user),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return { success: true } as const;
+    }),
+  }),
+
+  // ==================== 用户列表 ====================
+  users: router({
+    list: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      await ensureUsersVisibleAppsColumn(db);
+      const result = await db.select({
+        id: users.id,
+        openId: users.openId,
+        name: users.name,
+        email: users.email,
+        department: users.department,
+        position: users.position,
+        phone: users.phone,
+        role: users.role,
+        visibleApps: users.visibleApps,
+        createdAt: users.createdAt,
+        lastSignedIn: users.lastSignedIn,
+      }).from(users);
+      return result;
+    }),
+    create: protectedProcedure.input(z.object({
+      username: z.string(),
+      name: z.string(),
+      email: z.string().optional(),
+      phone: z.string().optional(),
+      department: z.string().optional(),
+      role: z.enum(["user", "admin"]).default("user"),
+      visibleApps: z.array(z.string()).optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      await ensureUsersVisibleAppsColumn(db);
+      const openId = `user-${input.username}`;
+      await db.insert(users).values({
+        openId,
+        name: input.name,
+        email: input.email || null,
+        phone: input.phone || null,
+        department: input.department || null,
+        role: input.role,
+        visibleApps: input.visibleApps?.length ? input.visibleApps.join(",") : null,
+        loginMethod: "password",
+      });
+      return { success: true };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      username: z.string().optional(),
+      name: z.string().optional(),
+      email: z.string().optional(),
+      phone: z.string().optional(),
+      department: z.string().optional(),
+      position: z.string().optional(),
+      role: z.enum(["user", "admin"]).optional(),
+      visibleApps: z.array(z.string()).optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      await ensureUsersVisibleAppsColumn(db);
+      const { id, username, ...data } = input;
+      await db.update(users).set({
+        ...data,
+        visibleApps: data.visibleApps?.length ? data.visibleApps.join(",") : null,
+      }).where(eq(users.id, id));
+      if (username) {
+        await db.update(users).set({ openId: `user-${username}` }).where(eq(users.id, id));
+      }
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({
+      id: z.number(),
+    })).mutation(async ({ input, ctx }) => {
+      await deleteUser(input.id, ctx.user?.id);
+      return { success: true };
+    }),
+    setPassword: protectedProcedure.input(z.object({
+      id: z.number(),
+      newPassword: z.string(),
+    })).mutation(async ({ input, ctx }) => {
+      if (ctx.user?.role !== "admin") {
+        throw new Error("仅管理员可修改密码");
+      }
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const passwordHash = hashPassword(input.newPassword);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS user_passwords (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          userId INT NOT NULL UNIQUE,
+          passwordHash VARCHAR(255) NOT NULL,
+          updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+      `);
+      await db.execute(sql`
+        INSERT INTO user_passwords (userId, passwordHash)
+        VALUES (${input.id}, ${passwordHash})
+        ON DUPLICATE KEY UPDATE
+          passwordHash = VALUES(passwordHash),
+          updatedAt = CURRENT_TIMESTAMP
+      `);
+      return { success: true };
+    }),
+  }),
+
+  // ==================== 产品管理 ====================
+  products: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        status: z.string().optional(),
+        salePermission: z.enum(["saleable", "not_saleable"]).optional(),
+        procurePermission: z.enum(["purchasable", "production_only"]).optional(),
+        isSterilized: z.boolean().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        console.log('[products.list] input:', JSON.stringify(input));
+        const result = await getProducts(input);
+        console.log('[products.list] result count:', result.length);
+        return result;
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getProductById(input.id);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        isMedicalDevice: z.boolean().optional().default(true),
+        isSterilized: z.boolean().optional().default(false),
+        code: z.string(),
+        name: z.string(),
+        specification: z.string().optional(),
+        category: z.string().optional(),
+        productCategory: z.enum(["finished", "semi_finished", "raw_material", "auxiliary", "other"]).optional(),
+        unit: z.string().optional(),
+        registrationNo: z.string().optional(),
+        udiDi: z.string().optional(),
+        manufacturer: z.string().optional(),
+        storageCondition: z.string().optional(),
+        shelfLife: z.number().optional(),
+        riskLevel: z.enum(["I", "II", "III"]).optional(),
+        salePermission: z.enum(["saleable", "not_saleable"]).default("saleable"),
+        procurePermission: z.enum(["purchasable", "production_only"]).default("purchasable"),
+        status: z.enum(["draft", "active", "discontinued"]).optional(),
+        description: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await createProduct({ ...input, createdBy: ctx.user?.id });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          isMedicalDevice: z.boolean().optional(),
+          isSterilized: z.boolean().optional(),
+          code: z.string().optional(),
+          name: z.string().optional(),
+          specification: z.string().optional(),
+          category: z.string().optional(),
+          productCategory: z.enum(["finished", "semi_finished", "raw_material", "auxiliary", "other"]).optional(),
+          unit: z.string().optional(),
+          registrationNo: z.string().optional(),
+          udiDi: z.string().optional(),
+          manufacturer: z.string().optional(),
+          storageCondition: z.string().optional(),
+          shelfLife: z.number().optional(),
+          riskLevel: z.enum(["I", "II", "III"]).optional(),
+          salePermission: z.enum(["saleable", "not_saleable"]).optional(),
+          procurePermission: z.enum(["purchasable", "production_only"]).optional(),
+          status: z.enum(["draft", "active", "discontinued"]).optional(),
+          description: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        await updateProduct(input.id, input.data);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteProduct(input.id);
+        return { success: true };
+      }),
+    // 获取下一个自动编码（支持按前缀）
+    nextCode: protectedProcedure
+      .input(z.object({ prefix: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getNextProductCode(input?.prefix || "CP");
+      }),
+    // 校验编码是否重复
+    checkCode: protectedProcedure
+      .input(z.object({ code: z.string(), excludeId: z.number().optional() }))
+      .query(async ({ input }) => {
+        const exists = await isProductCodeExists(input.code, input.excludeId);
+        return { exists };
+      }),
+  }),
+  // ==================== 客户管理 =====================
+  customers: router({
+    nextCode: protectedProcedure
+      .input(z.object({ prefix: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return { code: await getNextCustomerCode(input?.prefix || "KH") };
+      }),
+
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        type: z.string().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input, ctx }) => {
+        await normalizePaymentConditionDataInDb();
+        const restrictToSelf = isSalesDepartmentUser(ctx.user) && !canViewAllSalesData(ctx.user);
+        return await getCustomers({
+          ...input,
+          salesPersonId: restrictToSelf ? ctx.user?.id : undefined,
+        });
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const customer = await getCustomerById(input.id);
+        if (!customer) return undefined;
+        const restrictToSelf = isSalesDepartmentUser(ctx.user) && !canViewAllSalesData(ctx.user);
+        if (restrictToSelf && customer.salesPersonId !== ctx.user?.id) {
+          throw new Error("无权查看该客户");
+        }
+        return customer;
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        code: z.string(),
+        name: z.string(),
+        shortName: z.string().optional(),
+        type: z.enum(["hospital", "dealer", "domestic", "overseas"]),
+        contactPerson: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+        province: z.string().optional(),
+        city: z.string().optional(),
+        country: z.string().optional(),
+        paymentTerms: z.string().optional(),
+        currency: z.string().optional(),
+        creditLimit: z.string().optional(),
+        taxNo: z.string().optional(),
+        bankAccount: z.string().optional(),
+        bankName: z.string().optional(),
+        needInvoice: z.boolean().optional(),
+        salesPersonId: z.number().optional(),
+        status: z.enum(["active", "inactive", "blacklist"]).optional(),
+        source: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const customerId = await createCustomer({
+          ...input,
+          paymentTerms: input.paymentTerms === undefined ? undefined : normalizePaymentCondition(input.paymentTerms),
+          createdBy: ctx.user?.id,
+        });
+        // 新建后自动补充客户商标域名（失败不影响主流程）
+        await enrichCustomerLogoDomain(customerId).catch(() => undefined);
+        return customerId;
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          code: z.string().optional(),
+          name: z.string().optional(),
+          shortName: z.string().optional(),
+          type: z.enum(["hospital", "dealer", "domestic", "overseas"]).optional(),
+          contactPerson: z.string().optional(),
+          phone: z.string().optional(),
+          email: z.string().optional(),
+          address: z.string().optional(),
+          province: z.string().optional(),
+          city: z.string().optional(),
+          country: z.string().optional(),
+          paymentTerms: z.string().optional(),
+          currency: z.string().optional(),
+          creditLimit: z.string().optional(),
+          taxNo: z.string().optional(),
+          bankAccount: z.string().optional(),
+          bankName: z.string().optional(),
+          needInvoice: z.boolean().optional(),
+          salesPersonId: z.number().optional(),
+          status: z.enum(["active", "inactive", "blacklist"]).optional(),
+          source: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        await updateCustomer(input.id, {
+          ...input.data,
+          paymentTerms: input.data.paymentTerms === undefined ? undefined : normalizePaymentCondition(input.data.paymentTerms),
+        });
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteCustomer(input.id);
+        return { success: true };
+      }),
+
+    // 获取客户的历史订单
+    getOrders: protectedProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+      if (!db) throw new Error("Database not available");
+        if (!db) return [];
+        const orders = await db
+          .select({
+            id: salesOrdersTable.id,
+            orderNo: salesOrdersTable.orderNo,
+            orderDate: salesOrdersTable.orderDate,
+            totalAmount: salesOrdersTable.totalAmount,
+            currency: salesOrdersTable.currency,
+            status: salesOrdersTable.status,
+          })
+          .from(salesOrdersTable)
+          .where(eq(salesOrdersTable.customerId, input.customerId))
+          .orderBy(desc(salesOrdersTable.orderDate))
+          .limit(10);
+        return orders;
+      }),
+
+    // 获取客户交易统计数据
+    getStats: protectedProcedure
+      .input(z.object({ customerId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+      if (!db) throw new Error("Database not available");
+        if (!db) {
+          return {
+            orderCount: 0,
+            totalAmount: 0,
+            paidAmount: 0,
+            lastOrderDate: null,
+          };
+        }
+        const orders = await db
+          .select({
+            totalAmount: salesOrdersTable.totalAmount,
+            orderDate: salesOrdersTable.orderDate,
+          })
+          .from(salesOrdersTable)
+          .where(eq(salesOrdersTable.customerId, input.customerId));
+
+        const orderCount = orders.length;
+        const totalAmount = orders.reduce((sum: number, order: any) => {
+          const amount = typeof order.totalAmount === 'string' 
+            ? parseFloat(order.totalAmount) 
+            : (order.totalAmount || 0);
+          return sum + amount;
+        }, 0);
+        const receivables = await db
+          .select({
+            paidAmount: accountsReceivableTable.paidAmount,
+          })
+          .from(accountsReceivableTable)
+          .where(eq(accountsReceivableTable.customerId, input.customerId));
+        const paidAmount = receivables.reduce((sum: number, row: any) => {
+          const value = typeof row.paidAmount === "string"
+            ? parseFloat(row.paidAmount)
+            : (row.paidAmount || 0);
+          return sum + (Number.isFinite(value) ? value : 0);
+        }, 0);
+        const lastOrderDate = orders.length > 0 
+          ? [...orders].sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime())[0].orderDate
+          : null;
+
+        return {
+          orderCount,
+          totalAmount,
+          paidAmount,
+          lastOrderDate,
+        };
+      }),
+  }),
+
+  // ==================== 供应商管理 ====================
+  suppliers: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        type: z.string().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        await normalizePaymentConditionDataInDb();
+        return await getSuppliers(input);
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getSupplierById(input.id);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        code: z.string(),
+        name: z.string(),
+        shortName: z.string().optional(),
+        type: z.enum(["material", "equipment", "service"]),
+        contactPerson: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+        businessLicense: z.string().optional(),
+        qualificationLevel: z.enum(["A", "B", "C", "pending"]).optional(),
+        paymentTerms: z.string().optional(),
+        bankAccount: z.string().optional(),
+        taxNo: z.string().optional(),
+        evaluationScore: z.string().optional(),
+        status: z.enum(["qualified", "pending", "disqualified"]).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await createSupplier({
+          ...input,
+          paymentTerms: input.paymentTerms === undefined ? undefined : normalizePaymentCondition(input.paymentTerms),
+          createdBy: ctx.user?.id,
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          code: z.string().optional(),
+          name: z.string().optional(),
+          shortName: z.string().optional(),
+          type: z.enum(["material", "equipment", "service"]).optional(),
+          contactPerson: z.string().optional(),
+          phone: z.string().optional(),
+          email: z.string().optional(),
+          address: z.string().optional(),
+          businessLicense: z.string().optional(),
+          qualificationLevel: z.enum(["A", "B", "C", "pending"]).optional(),
+          paymentTerms: z.string().optional(),
+          bankAccount: z.string().optional(),
+          taxNo: z.string().optional(),
+          evaluationScore: z.string().optional(),
+          status: z.enum(["qualified", "pending", "disqualified"]).optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        await updateSupplier(input.id, {
+          ...input.data,
+          paymentTerms: input.data.paymentTerms === undefined ? undefined : normalizePaymentCondition(input.data.paymentTerms),
+        });
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteSupplier(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==================== 销售订单 ====================
+  salesOrders: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().nullish(),
+        status: z.string().nullish(),
+        customerId: z.number().nullish(),
+        limit: z.number().nullish(),
+        offset: z.number().nullish(),
+      }).optional())
+      .query(async ({ input, ctx }) => {
+        await normalizePaymentConditionDataInDb();
+        const restrictToSelf = isSalesDepartmentUser(ctx.user) && !canViewAllSalesData(ctx.user);
+        const params = input ? {
+          search: input.search ?? undefined,
+          status: input.status ?? undefined,
+          customerId: input.customerId ?? undefined,
+          salesPersonId: restrictToSelf ? ctx.user?.id : undefined,
+          limit: input.limit ?? undefined,
+          offset: input.offset ?? undefined,
+        } : {
+          salesPersonId: restrictToSelf ? ctx.user?.id : undefined,
+        };
+        const baseOrders = await getSalesOrders(params);
+        if (!restrictToSelf || !ctx.user?.id) {
+          return baseOrders;
+        }
+
+        const statusFilter = String(input?.status ?? "").trim();
+        if (statusFilter && statusFilter !== "pending_review") {
+          return baseOrders;
+        }
+
+        const pendingOrders = await getSalesOrders({
+          search: input?.search ?? undefined,
+          status: "pending_review",
+          customerId: input?.customerId ?? undefined,
+        });
+        const pendingApprovalOrders: typeof baseOrders = [];
+        for (const order of pendingOrders as any[]) {
+          const approvalState = await getSalesOrderApprovalState(Number(order.id), ctx.user?.id, ctx.user?.role);
+          if (approvalState?.canApprove) {
+            pendingApprovalOrders.push(order);
+          }
+        }
+
+        const mergedOrders = [...baseOrders, ...pendingApprovalOrders];
+        const dedupedOrders = Array.from(
+          new Map(mergedOrders.map((order: any) => [Number(order.id), order])).values(),
+        );
+        dedupedOrders.sort((a: any, b: any) =>
+          String(b?.createdAt ?? b?.orderDate ?? "").localeCompare(String(a?.createdAt ?? a?.orderDate ?? ""))
+        );
+
+        const offset = Math.max(0, Number(input?.offset ?? 0));
+        const limit = Number(input?.limit ?? 0);
+        return limit > 0 ? dedupedOrders.slice(offset, offset + limit) : dedupedOrders.slice(offset);
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const order = await getSalesOrderById(input.id);
+        const restrictToSelf = isSalesDepartmentUser(ctx.user) && !canViewAllSalesData(ctx.user);
+        if (restrictToSelf && order?.salesPersonId !== ctx.user?.id) {
+          const approvalState = await getSalesOrderApprovalState(input.id, ctx.user?.id, ctx.user?.role);
+          if (!approvalState?.canApprove) {
+            throw new Error("无权查看该订单");
+          }
+        }
+        const items = await getSalesOrderItems(input.id);
+        return { order, items };
+      }),
+
+    getApprovalState: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input, ctx }) => {
+        return await getSalesOrderApprovalState(input.id, ctx.user?.id, ctx.user?.role);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        orderNo: z.string(),
+        customerId: z.number(),
+        orderDate: z.string(),
+        deliveryDate: z.string().optional(),
+        totalAmount: z.string().optional(),
+        currency: z.string().optional(),
+        paymentMethod: z.string().optional(),
+        exchangeRate: z.string().optional(),
+        totalAmountBase: z.string().optional(),
+        status: z.enum(["draft", "pending_review", "approved", "pending_payment", "confirmed", "in_production", "ready_to_ship", "shipped", "completed", "cancelled"]).optional(),
+        paymentStatus: z.enum(["unpaid", "partial", "paid"]).optional(),
+        shippingAddress: z.string().optional(),
+        shippingContact: z.string().optional(),
+        shippingPhone: z.string().optional(),
+        needsShipping: z.boolean().optional(),
+        shippingFee: z.string().optional(),
+        isExport: z.boolean().optional(),
+        remark: z.string().optional(),
+        salesPersonId: z.number().optional(),
+        items: z.array(z.object({
+          productId: z.number(),
+          quantity: z.string(),
+          unit: z.string().optional(),
+          unitPrice: z.string().optional(),
+          amount: z.string().optional(),
+          remark: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { items, orderDate, deliveryDate, ...orderData } = input;
+        const orderId = await createSalesOrder(
+          { 
+            ...orderData, 
+            paymentMethod: orderData.paymentMethod === undefined ? undefined : normalizePaymentCondition(orderData.paymentMethod),
+            orderDate: new Date(orderDate),
+            deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
+            createdBy: ctx.user?.id 
+          },
+          items.map(item => ({ ...item, orderId: 0 }))
+        );
+        try {
+          await syncOneReceivableFromSalesOrder(orderId, ctx.user?.id);
+        } catch {
+          // 应收联动失败不阻塞销售订单创建
+        }
+        return orderId;
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          orderNo: z.string().optional(),
+          customerId: z.number().optional(),
+          orderDate: z.string().optional(),
+          deliveryDate: z.string().optional(),
+          totalAmount: z.string().optional(),
+          currency: z.string().optional(),
+          paymentMethod: z.string().optional(),
+          exchangeRate: z.string().optional(),
+          totalAmountBase: z.string().optional(),
+          status: z.enum(["draft", "pending_review", "approved", "pending_payment", "confirmed", "in_production", "ready_to_ship", "shipped", "completed", "cancelled"]).optional(),
+          paymentStatus: z.enum(["unpaid", "partial", "paid"]).optional(),
+          shippingAddress: z.string().optional(),
+          shippingContact: z.string().optional(),
+          shippingPhone: z.string().optional(),
+          needsShipping: z.boolean().optional(),
+          shippingFee: z.string().optional(),
+          isExport: z.boolean().optional(),
+          remark: z.string().optional(),
+          salesPersonId: z.number().optional(),
+          items: z.array(z.object({
+            productId: z.number(),
+            quantity: z.string(),
+            unit: z.string().optional(),
+            unitPrice: z.string().optional(),
+            amount: z.string().optional(),
+            remark: z.string().optional(),
+          })).optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const { orderDate, deliveryDate, items, ...rest } = input.data;
+        await updateSalesOrder(input.id, {
+          ...rest,
+          paymentMethod: rest.paymentMethod === undefined ? undefined : normalizePaymentCondition(rest.paymentMethod),
+          orderDate: orderDate ? new Date(orderDate) : undefined,
+          deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
+        }, items?.map(item => ({ ...item, orderId: input.id })));
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteSalesOrder(input.id);
+        return { success: true };
+      }),
+
+    // 获取下一个订单号
+    nextOrderNo: protectedProcedure
+      .query(async () => {
+        return await getNextSalesOrderNo();
+      }),
+
+    // 提交审批
+    submitForApproval: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+      if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("Database not available");
+        await db.update(salesOrdersTable).set({ status: "pending_review" }).where(eq(salesOrdersTable.id, input.id));
+        await db.insert(orderApprovals).values({
+          orderId: input.id,
+          orderType: "sales",
+          action: "submit",
+          approver: ctx.user?.name || "Unknown",
+          approverId: ctx.user?.id,
+        });
+        try {
+          await syncOneReceivableFromSalesOrder(input.id, ctx.user?.id);
+        } catch {
+          // 应收联动失败不阻塞提审
+        }
+        return { success: true };
+      }),
+
+    // 审批通过
+    approve: protectedProcedure
+      .input(z.object({ id: z.number(), comment: z.string().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const approvalState = await getSalesOrderApprovalState(input.id, ctx.user?.id, ctx.user?.role);
+        if (!approvalState || approvalState.stage === "none") {
+          throw new Error("当前订单无需审批");
+        }
+        if (!approvalState.canApprove) {
+          const approverName = approvalState.currentApproverName || "指定审批人";
+          throw new Error(`当前订单待${approverName}审批`);
+        }
+        await db.insert(orderApprovals).values({
+          orderId: input.id,
+          orderType: "sales",
+          action: "approve",
+          approver: ctx.user?.name || "Unknown",
+          approverId: ctx.user?.id,
+          comment: input.comment,
+        });
+        const isAdminApprove = String(ctx.user?.role || "") === "admin";
+        const nextApprovalState = isAdminApprove
+          ? { stage: "none" as const }
+          : await getSalesOrderApprovalState(input.id, ctx.user?.id, ctx.user?.role);
+        await db
+          .update(salesOrdersTable)
+          .set({ status: nextApprovalState?.stage === "none" ? "approved" : "pending_review" })
+          .where(eq(salesOrdersTable.id, input.id));
+        try {
+          await syncOneReceivableFromSalesOrder(input.id, ctx.user?.id);
+        } catch {
+          // 应收联动失败不阻塞审批
+        }
+        return { success: true };
+      }),
+
+    // 驳回
+    reject: protectedProcedure
+      .input(z.object({ id: z.number(), comment: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const approvalState = await getSalesOrderApprovalState(input.id, ctx.user?.id, ctx.user?.role);
+        if (!approvalState || approvalState.stage === "none") {
+          throw new Error("当前订单无需审批");
+        }
+        if (!approvalState.canApprove) {
+          const approverName = approvalState.currentApproverName || "指定审批人";
+          throw new Error(`当前订单待${approverName}审批`);
+        }
+        await db.update(salesOrdersTable).set({ status: "draft" }).where(eq(salesOrdersTable.id, input.id));
+        await db.insert(orderApprovals).values({
+          orderId: input.id,
+          orderType: "sales",
+          action: "reject",
+          approver: ctx.user?.name || "Unknown",
+          approverId: ctx.user?.id,
+          comment: input.comment,
+        });
+        return { success: true };
+      }),
+
+    // 获取审批历史
+    getApprovalHistory: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+      if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("Database not available");
+        return await db.select().from(orderApprovals)
+          .where(eq(orderApprovals.orderId, input.id))
+          .orderBy(desc(orderApprovals.createdAt));
+      }),
+    // 获取历史销售价格（按客户+产品查询最近一次单价和货币）
+    getLastPrices: protectedProcedure
+      .input(z.object({
+        customerId: z.number(),
+        productIds: z.array(z.number()),
+      }))
+      .query(async ({ input }) => {
+        return await getLastSalePrices(input.customerId, input.productIds);
+      }),
+  }),
+  // ==================== 采购订单 =====================
+  purchaseOrders: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        status: z.string().optional(),
+        supplierId: z.number().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getPurchaseOrders(input);
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const order = await getPurchaseOrderById(input.id);
+        const items = await getPurchaseOrderItems(input.id);
+        return { order, items };
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        orderNo: z.string(),
+        supplierId: z.number(),
+        orderDate: z.string(),
+        expectedDate: z.string().optional(),
+        totalAmount: z.string().optional(),
+        currency: z.string().optional(),
+        status: z.enum(["draft", "approved", "ordered", "partial_received", "received", "cancelled"]).optional(),
+        paymentStatus: z.enum(["unpaid", "partial", "paid"]).optional(),
+        remark: z.string().optional(),
+        buyerId: z.number().optional(),
+        items: z.array(z.object({
+          materialCode: z.string(),
+          materialName: z.string(),
+          specification: z.string().optional(),
+          quantity: z.string(),
+          unit: z.string().optional(),
+          unitPrice: z.string().optional(),
+          amount: z.string().optional(),
+          remark: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { items, orderDate, expectedDate, ...orderData } = input;
+        return await createPurchaseOrder(
+          { 
+            ...orderData, 
+            orderDate: new Date(orderDate),
+            expectedDate: expectedDate ? new Date(expectedDate) : undefined,
+            createdBy: ctx.user?.id 
+          },
+          items.map(item => ({ ...item, orderId: 0 }))
+        );
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          orderNo: z.string().optional(),
+          supplierId: z.number().optional(),
+          orderDate: z.string().optional(),
+          expectedDate: z.string().optional(),
+          totalAmount: z.string().optional(),
+          currency: z.string().optional(),
+          status: z.enum(["draft", "approved", "ordered", "partial_received", "received", "cancelled"]).optional(),
+          paymentStatus: z.enum(["unpaid", "partial", "paid"]).optional(),
+          remark: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const { orderDate, expectedDate, ...rest } = input.data;
+        await updatePurchaseOrder(input.id, {
+          ...rest,
+          orderDate: orderDate ? new Date(orderDate) : undefined,
+          expectedDate: expectedDate ? new Date(expectedDate) : undefined,
+        });
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deletePurchaseOrder(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==================== 生产订单 ====================
+  productionOrders: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getProductionOrders(input);
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getProductionOrderById(input.id);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        orderNo: z.string(),
+        productId: z.number(),
+        plannedQty: z.string(),
+        unit: z.string().optional(),
+        batchNo: z.string().optional(),
+        plannedStartDate: z.string().optional(),
+        plannedEndDate: z.string().optional(),
+        status: z.enum(["draft", "planned", "in_progress", "completed", "cancelled"]).optional(),
+        salesOrderId: z.number().optional(),
+        remark: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { plannedStartDate, plannedEndDate, ...rest } = input;
+        return await createProductionOrder({
+          ...rest,
+          plannedStartDate: plannedStartDate ? new Date(plannedStartDate) : undefined,
+          plannedEndDate: plannedEndDate ? new Date(plannedEndDate) : undefined,
+          createdBy: ctx.user?.id,
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          orderNo: z.string().optional(),
+          productId: z.number().optional(),
+          plannedQty: z.string().optional(),
+          completedQty: z.string().optional(),
+          unit: z.string().optional(),
+          batchNo: z.string().optional(),
+          plannedStartDate: z.string().optional(),
+          plannedEndDate: z.string().optional(),
+          actualStartDate: z.string().optional(),
+          actualEndDate: z.string().optional(),
+          status: z.enum(["draft", "planned", "in_progress", "completed", "cancelled"]).optional(),
+          remark: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const { plannedStartDate, plannedEndDate, actualStartDate, actualEndDate, ...rest } = input.data;
+        await updateProductionOrder(input.id, {
+          ...rest,
+          plannedStartDate: plannedStartDate ? new Date(plannedStartDate) : undefined,
+          plannedEndDate: plannedEndDate ? new Date(plannedEndDate) : undefined,
+          actualStartDate: actualStartDate ? new Date(actualStartDate) : undefined,
+          actualEndDate: actualEndDate ? new Date(actualEndDate) : undefined,
+        });
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteProductionOrder(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==================== 库存管理 ====================
+  inventory: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        warehouseId: z.number().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getInventory(input);
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getInventoryById(input.id);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        warehouseId: z.number(),
+        productId: z.number().optional(),
+        materialCode: z.string().optional(),
+        itemName: z.string(),
+        batchNo: z.string().optional(),
+        lotNo: z.string().optional(),
+        quantity: z.string(),
+        unit: z.string().optional(),
+        location: z.string().optional(),
+        status: z.enum(["qualified", "quarantine", "unqualified", "reserved"]).optional(),
+        productionDate: z.string().optional(),
+        expiryDate: z.string().optional(),
+        udiPi: z.string().optional(),
+        safetyStock: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { productionDate, expiryDate, ...rest } = input;
+        return await createInventory({
+          ...rest,
+          productionDate: productionDate ? new Date(productionDate) : undefined,
+          expiryDate: expiryDate ? new Date(expiryDate) : undefined,
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          warehouseId: z.number().optional(),
+          productId: z.number().optional(),
+          materialCode: z.string().optional(),
+          itemName: z.string().optional(),
+          batchNo: z.string().optional(),
+          lotNo: z.string().optional(),
+          quantity: z.string().optional(),
+          unit: z.string().optional(),
+          location: z.string().optional(),
+          status: z.enum(["qualified", "quarantine", "unqualified", "reserved"]).optional(),
+          productionDate: z.string().optional(),
+          expiryDate: z.string().optional(),
+          udiPi: z.string().optional(),
+          safetyStock: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const { productionDate, expiryDate, ...rest } = input.data;
+        await updateInventory(input.id, {
+          ...rest,
+          productionDate: productionDate ? new Date(productionDate) : undefined,
+          expiryDate: expiryDate ? new Date(expiryDate) : undefined,
+        });
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteInventory(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==================== 质量检验 ====================
+  qualityInspections: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        type: z.string().optional(),
+        result: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getQualityInspections(input);
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getQualityInspectionById(input.id);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        inspectionNo: z.string(),
+        type: z.enum(["IQC", "IPQC", "OQC"]),
+        relatedDocNo: z.string().optional(),
+        itemName: z.string(),
+        batchNo: z.string().optional(),
+        sampleQty: z.string().optional(),
+        inspectedQty: z.string().optional(),
+        qualifiedQty: z.string().optional(),
+        unqualifiedQty: z.string().optional(),
+        result: z.enum(["qualified", "unqualified", "conditional"]).optional(),
+        inspectorId: z.number().optional(),
+        inspectionDate: z.string().optional(),
+        remark: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { inspectionDate, ...rest } = input;
+        return await createQualityInspection({
+          ...rest,
+          inspectionDate: inspectionDate ? new Date(inspectionDate) : undefined,
+          inspectorId: input.inspectorId || ctx.user?.id,
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          inspectionNo: z.string().optional(),
+          type: z.enum(["IQC", "IPQC", "OQC"]).optional(),
+          relatedDocNo: z.string().optional(),
+          itemName: z.string().optional(),
+          batchNo: z.string().optional(),
+          sampleQty: z.string().optional(),
+          inspectedQty: z.string().optional(),
+          qualifiedQty: z.string().optional(),
+          unqualifiedQty: z.string().optional(),
+          result: z.enum(["qualified", "unqualified", "conditional"]).optional(),
+          inspectorId: z.number().optional(),
+          inspectionDate: z.string().optional(),
+          remark: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const { inspectionDate, ...rest } = input.data;
+        await updateQualityInspection(input.id, {
+          ...rest,
+          inspectionDate: inspectionDate ? new Date(inspectionDate) : undefined,
+        });
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteQualityInspection(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==================== BOM 物料清单 ====================
+  bom: router({
+    list: protectedProcedure
+      .input(z.object({ search: z.string().optional(), productId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        if (input?.productId) return await getBomByProductId(input.productId);
+        return [];
+      }),
+    getByProductId: protectedProcedure
+      .input(z.object({ productId: z.number() }))
+      .query(async ({ input }) => {
+        return await getBomByProductId(input.productId);
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        productId: z.number(),
+        materialCode: z.string(),
+        materialName: z.string(),
+        specification: z.string().optional(),
+        quantity: z.string(),
+        unit: z.string().optional(),
+        version: z.string().optional(),
+        status: z.enum(["active", "inactive"]).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await createBomItem(input);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          productId: z.number().optional(),
+          materialCode: z.string().optional(),
+          materialName: z.string().optional(),
+          specification: z.string().optional(),
+          quantity: z.string().optional(),
+          unit: z.string().optional(),
+          version: z.string().optional(),
+          status: z.enum(["active", "inactive"]).optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        await updateBomItem(input.id, input.data);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteBomItem(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==================== 仓库管理 ====================
+  warehouses: router({
+    list: protectedProcedure
+      .input(z.object({ status: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getWarehouses(input);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        code: z.string(),
+        name: z.string(),
+        type: z.enum(["raw_material", "semi_finished", "finished", "quarantine"]),
+        address: z.string().optional(),
+        manager: z.string().optional(),
+        phone: z.string().optional(),
+        status: z.enum(["active", "inactive"]).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await createWarehouse(input);
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          name: z.string().optional(),
+          type: z.enum(["raw_material", "semi_finished", "finished", "quarantine"]).optional(),
+          address: z.string().optional(),
+          manager: z.string().optional(),
+          phone: z.string().optional(),
+          status: z.enum(["active", "inactive"]).optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        await updateWarehouse(input.id, input.data);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteWarehouse(input.id);
+        return { success: true };
+      }),
+  }),
+  // ==================== 库存出入库记录 ====================
+  inventoryTransactions: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        type: z.string().optional(),
+        warehouseId: z.number().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getInventoryTransactions(input);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        warehouseId: z.number(),
+        inventoryId: z.number().optional(),
+        productId: z.number().optional(),
+        type: z.enum(["purchase_in", "production_in", "return_in", "other_in", "production_out", "sales_out", "return_out", "other_out", "transfer", "adjust"]),
+        documentNo: z.string().optional(),
+        itemName: z.string(),
+        batchNo: z.string().optional(),
+        sterilizationBatchNo: z.string().optional(),
+        quantity: z.string(),
+        unit: z.string().optional(),
+        beforeQty: z.string().optional(),
+        afterQty: z.string().optional(),
+        relatedOrderId: z.number().optional(),
+        remark: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await createInventoryTransaction({ ...input, operatorId: ctx.user?.id });
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          documentNo: z.string().optional(),
+          productId: z.number().optional(),
+          itemName: z.string().optional(),
+          batchNo: z.string().optional(),
+          sterilizationBatchNo: z.string().optional(),
+          quantity: z.string().optional(),
+          unit: z.string().optional(),
+          remark: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        await updateInventoryTransaction(input.id, input.data);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteInventoryTransaction(input.id);
+        return { success: true };
+      }),
+  }),
+  // ==================== 操作日志 ====================
+  logs: router({
+    list: protectedProcedure
+      .input(z.object({
+        module: z.string().optional(),
+        action: z.string().optional(),
+        operatorId: z.number().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getOperationLogs(input);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        module: z.enum(["department", "code_rule", "user", "language", "system", "product", "customer", "supplier", "inventory", "order", "quality", "production", "finance", "document"]),
+        action: z.enum(["create", "update", "delete", "status_change", "role_change", "permission_change", "import", "export", "login", "logout", "reset", "approve", "reject"]),
+        targetType: z.string(),
+        targetId: z.string().optional(),
+        targetName: z.string().optional(),
+        description: z.string(),
+        previousData: z.string().optional(),
+        newData: z.string().optional(),
+        changedFields: z.string().optional(),
+        operatorName: z.string(),
+        operatorRole: z.string().optional(),
+        operatorDepartment: z.string().optional(),
+        ipAddress: z.string().optional(),
+        result: z.enum(["success", "failure", "partial"]).optional(),
+        errorMessage: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await createOperationLog({ ...input, operatorId: ctx.user!.id });
+        return { success: true };
+      }),
+    clear: protectedProcedure
+      .mutation(async () => {
+        await clearOperationLogs();
+        return { success: true };
+      }),
+  }),
+  // ==================== 回收箱（管理员） ====================
+  recycleBin: router({
+    list: adminProcedure
+      .input(
+        z.object({
+          status: z.enum(["active", "restored", "expired"]).optional(),
+          keyword: z.string().optional(),
+          limit: z.number().optional(),
+          offset: z.number().optional(),
+        }).optional(),
+      )
+      .query(async ({ input }) => {
+        return await getRecycleBinEntries(input);
+      }),
+    restore: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await restoreRecycleBinEntry(input.id, ctx.user?.id);
+        return { success: true };
+      }),
+    remove: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await removeRecycleBinEntry(input.id);
+        return { success: true };
+      }),
+    clearExpired: adminProcedure.mutation(async () => {
+      await clearExpiredRecycleBinEntries();
+      return { success: true };
+    }),
+  }),
+  // ==================== 仪表盘统计 ====================
+  dashboard: router({
+    stats: protectedProcedure.query(async ({ ctx }) => {
+      const restrictToSelf = isSalesDepartmentUser(ctx.user) && !canViewAllSalesData(ctx.user);
+      return await getDashboardStats({
+        salesPersonId: restrictToSelf ? ctx.user?.id : undefined,
+        operatorId: ctx.user?.id,
+        operatorRole: ctx.user?.role,
+        operatorDepartment: ctx.user?.department ?? null,
+      });
+    }),
+  }),
+
+  // ==================== 文件管理 (知识库) ====================
+  documents: router({
+    list: protectedProcedure
+      .query(async () => {
+        const db = await getDb();
+      if (!db) throw new Error("Database not available");
+        return await db.select().from(documents).orderBy(desc(documents.createdAt));
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        docNo: z.string(),
+        title: z.string(),
+        category: z.enum(["policy", "sop", "record", "certificate", "external", "contract"]),
+        version: z.string().optional(),
+        department: z.string().optional(),
+        status: z.enum(["draft", "reviewing", "approved", "obsolete"]),
+        effectiveDate: z.string().optional(),
+        description: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+      if (!db) throw new Error("Database not available");
+        return await db.insert(documents).values({
+          ...input,
+          effectiveDate: input.effectiveDate ? new Date(input.effectiveDate) : null,
+          createdBy: ctx.user?.id,
+        });
+      }),
+    saveReceivableAttachments: protectedProcedure
+      .input(z.object({
+        invoiceNo: z.string(),
+        customerName: z.string(),
+        department: z.string().optional(),
+        files: z.array(z.object({
+          name: z.string(),
+          mimeType: z.string().optional(),
+          base64: z.string(),
+        })).min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const departmentName = normalizeDepartmentForUpload(input.department, "销售部");
+        const [department, folderName] = buildUploadFolderName(departmentName, "收款单").map(safeFileSegment);
+        const customerShortName = safeFileSegment(toCustomerShortName(input.customerName));
+        const invoiceNo = safeFileSegment(input.invoiceNo || "单据");
+
+        const created: Array<{ fileName: string; filePath: string; title: string; docNo: string }> = [];
+
+        for (let index = 0; index < input.files.length; index++) {
+          const file = input.files[index];
+          const extFromName = `.${String(file.name.split(".").pop() || "").toLowerCase()}`;
+          const ext =
+            extFromName ||
+            (String(file.mimeType || "").includes("pdf") ? ".pdf" :
+              String(file.mimeType || "").includes("word") ? ".docx" :
+                String(file.mimeType || "").includes("image/") ? ".png" : "");
+          if (!ATTACHMENT_EXTENSIONS.includes(ext as any)) {
+            throw new Error(`不支持的文件格式: ${file.name}`);
+          }
+          const fileBaseName = `${invoiceNo}-${customerShortName}-${String(index + 1).padStart(2, "0")}`;
+          const base64Body = String(file.base64 || "").replace(/^data:[^;]+;base64,/, "");
+          const fileBuffer = Buffer.from(base64Body, "base64");
+          const saved = await saveAttachmentFile({
+            department,
+            businessFolder: folderName,
+            originalName: file.name,
+            desiredBaseName: fileBaseName,
+            mimeType: file.mimeType,
+            buffer: fileBuffer,
+          });
+          const docNo = `RCPT-${Date.now()}-${randomBytes(2).toString("hex")}`.slice(0, 50);
+          const title = `${invoiceNo}-${customerShortName}`;
+
+          await db.insert(documents).values({
+            docNo,
+            title,
+            category: "record",
+            version: "V1.0",
+            department,
+            status: "approved",
+            filePath: saved.filePath,
+            description: `收款附件：${invoiceNo}（${saved.provider}:${saved.storageKey}）`,
+            createdBy: ctx.user?.id,
+          });
+
+          created.push({
+            fileName: saved.fileName,
+            filePath: saved.filePath,
+            title,
+            docNo,
+          });
+        }
+        return created;
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          docNo: z.string().optional(),
+          title: z.string().optional(),
+          category: z.enum(["policy", "sop", "record", "certificate", "external", "contract"]).optional(),
+          version: z.string().optional(),
+          department: z.string().optional(),
+          status: z.enum(["draft", "reviewing", "approved", "obsolete"]).optional(),
+          effectiveDate: z.string().optional(),
+          description: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+      if (!db) throw new Error("Database not available");
+        const { id, data } = input;
+        return await db.update(documents)
+          .set({
+            ...data,
+            effectiveDate: data.effectiveDate ? new Date(data.effectiveDate) : undefined,
+          })
+          .where(eq(documents.id, id));
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await deleteDocument(input.id, ctx.user?.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==================== 银行账户 ====================
+  bankAccounts: router({
+    list: protectedProcedure.input(z.object({ status: z.string().optional() }).optional()).query(async ({ input }) => {
+      return await getBankAccounts(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getBankAccountById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      accountName: z.string(), bankName: z.string(), accountNo: z.string(),
+      currency: z.string().optional(), swiftCode: z.string().optional(),
+      accountType: z.enum(["basic", "general", "special"]).optional(),
+      isDefault: z.boolean().optional(), balance: z.string().optional(),
+      status: z.enum(["active", "frozen", "closed"]).optional(), remark: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      return await createBankAccount(input);
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        accountName: z.string().optional(), bankName: z.string().optional(), accountNo: z.string().optional(),
+        currency: z.string().optional(), swiftCode: z.string().optional(),
+        accountType: z.enum(["basic", "general", "special"]).optional(),
+        isDefault: z.boolean().optional(), balance: z.string().optional(),
+        status: z.enum(["active", "frozen", "closed"]).optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateBankAccount(input.id, input.data);
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteBankAccount(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 汇率管理 ====================
+  exchangeRates: router({
+    list: protectedProcedure.input(z.object({ fromCurrency: z.string().optional(), limit: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getExchangeRates(input);
+    }),
+    create: protectedProcedure.input(z.object({
+      fromCurrency: z.string(), toCurrency: z.string().optional(),
+      rate: z.string(), effectiveDate: z.string(), source: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      return await createExchangeRate({ ...input, effectiveDate: new Date(input.effectiveDate) as any, createdBy: ctx.user?.id });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.object({
+        fromCurrency: z.string().optional(),
+        toCurrency: z.string().optional(),
+        rate: z.string().optional(),
+        effectiveDate: z.string().optional(),
+        source: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateExchangeRate(input.id, {
+        ...input.data,
+        effectiveDate: input.data.effectiveDate ? (new Date(input.data.effectiveDate) as any) : undefined,
+      });
+      return { success: true };
+    }),
+    refreshLive: protectedProcedure.input(z.object({
+      fromCurrency: z.string().default("USD"),
+      toCurrency: z.string().default("CNY"),
+    }).optional()).mutation(async ({ input, ctx }) => {
+      const fromCurrency = String(input?.fromCurrency ?? "USD").toUpperCase();
+      const toCurrency = String(input?.toCurrency ?? "CNY").toUpperCase();
+
+      const apiRes = await fetch(`https://open.er-api.com/v6/latest/${fromCurrency}`);
+      if (!apiRes.ok) {
+        throw new Error(`实时汇率获取失败(${apiRes.status})`);
+      }
+      const payload = await apiRes.json() as {
+        result?: string;
+        rates?: Record<string, number>;
+      };
+      const liveRate = payload?.rates?.[toCurrency];
+
+      if (!liveRate || Number.isNaN(Number(liveRate)) || Number(liveRate) <= 0) {
+        throw new Error("实时汇率数据不可用");
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const id = await createExchangeRate({
+        fromCurrency,
+        toCurrency,
+        rate: String(liveRate),
+        effectiveDate: new Date(today) as any,
+        source: "实时",
+        createdBy: ctx.user?.id,
+      });
+      return { id, fromCurrency, toCurrency, rate: String(liveRate), effectiveDate: today };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteExchangeRate(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 付款条件 ====================
+  paymentTerms: router({
+    list: protectedProcedure.input(z.object({ type: z.string().optional(), isActive: z.boolean().optional() }).optional()).query(async ({ input }) => {
+      return await getPaymentTerms(input);
+    }),
+    create: protectedProcedure.input(z.object({
+      name: z.string(), type: z.enum(["cash", "deposit", "monthly", "quarterly"]),
+      depositPercent: z.string().optional(), creditDays: z.number().optional(),
+      description: z.string().optional(), isActive: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      return await createPaymentTerm(input);
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        name: z.string().optional(), type: z.enum(["cash", "deposit", "monthly", "quarterly"]).optional(),
+        depositPercent: z.string().optional(), creditDays: z.number().optional(),
+        description: z.string().optional(), isActive: z.boolean().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updatePaymentTerm(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deletePaymentTerm(input.id); return { success: true };
+    }),
+    normalizeAllBusinessData: protectedProcedure.mutation(async () => {
+      await normalizePaymentConditionDataInDb();
+      return { success: true };
+    }),
+  }),
+
+  // ==================== 物料申请 ====================
+  materialRequests: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), department: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getMaterialRequests(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const request = await getMaterialRequestById(input.id);
+      const items = await getMaterialRequestItems(input.id);
+      return { request, items };
+    }),
+    create: protectedProcedure.input(z.object({
+      requestNo: z.string(), department: z.string(), requestDate: z.string(),
+      urgency: z.enum(["normal", "urgent", "critical"]).optional(),
+      reason: z.string().optional(), totalAmount: z.string().optional(), remark: z.string().optional(),
+      items: z.array(z.object({
+        productId: z.number().optional(), materialName: z.string(),
+        specification: z.string().optional(), quantity: z.string(),
+        unit: z.string().optional(), estimatedPrice: z.string().optional(), remark: z.string().optional(),
+      })),
+    })).mutation(async ({ input, ctx }) => {
+      const { items, requestDate, ...rest } = input;
+      return await createMaterialRequest(
+        { ...rest, requestDate: new Date(requestDate) as any, requesterId: ctx.user!.id },
+        items.map(i => ({ ...i, requestId: 0 }))
+      );
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        status: z.enum(["draft", "pending_approval", "approved", "rejected", "purchasing", "completed", "cancelled"]).optional(),
+        urgency: z.enum(["normal", "urgent", "critical"]).optional(),
+        reason: z.string().optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateMaterialRequest(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteMaterialRequest(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 费用报销 ====================
+  expenses: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), department: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getExpenseReimbursements(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getExpenseReimbursementById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      reimbursementNo: z.string(), department: z.string(), applyDate: z.string(),
+      totalAmount: z.string(), currency: z.string().optional(),
+      category: z.enum(["travel", "office", "entertainment", "transport", "communication", "other"]),
+      description: z.string().optional(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      return await createExpenseReimbursement({ ...input, applyDate: new Date(input.applyDate) as any, applicantId: ctx.user!.id });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        status: z.enum(["draft", "pending_approval", "approved", "rejected", "paid", "cancelled"]).optional(),
+        totalAmount: z.string().optional(), description: z.string().optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateExpenseReimbursement(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteExpenseReimbursement(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 收付款记录 ====================
+  paymentRecords: router({
+    list: protectedProcedure.input(z.object({ type: z.string().optional(), relatedType: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getPaymentRecords(input);
+    }),
+    create: protectedProcedure.input(z.object({
+      recordNo: z.string(), type: z.enum(["receipt", "payment"]),
+      relatedType: z.enum(["sales_order", "purchase_order", "expense", "other"]),
+      relatedId: z.number().optional(), relatedNo: z.string().optional(),
+      customerId: z.number().optional(), supplierId: z.number().optional(),
+      amount: z.string(), currency: z.string().optional(),
+      amountBase: z.string().optional(), exchangeRate: z.string().optional(),
+      bankAccountId: z.number(), paymentDate: z.string(),
+      paymentMethod: z.string().optional(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      return await createPaymentRecord({ ...input, paymentDate: new Date(input.paymentDate) as any, operatorId: ctx.user?.id });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        amount: z.string().optional(), currency: z.string().optional(),
+        paymentDate: z.string().optional(), paymentMethod: z.string().optional(),
+        remark: z.string().optional(), status: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      // paymentRecords 暂无独立 update 函数，直接返回成功
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deletePaymentRecord(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 报关管理 ====================
+  customs: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input, ctx }) => {
+      const restrictToSelf = isSalesDepartmentUser(ctx.user) && !canViewAllSalesData(ctx.user);
+      return await getCustomsDeclarations({
+        ...input,
+        salesPersonId: restrictToSelf ? ctx.user?.id : undefined,
+      });
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+      const declaration = await getCustomsDeclarationById(input.id);
+      if (!declaration) return undefined;
+      const restrictToSelf = isSalesDepartmentUser(ctx.user) && !canViewAllSalesData(ctx.user);
+      if (restrictToSelf && declaration.salesOrderId) {
+        const order = await getSalesOrderById(declaration.salesOrderId);
+        if (order?.salesPersonId !== ctx.user?.id) {
+          throw new Error("无权查看该报关单");
+        }
+      }
+      return declaration;
+    }),
+    create: protectedProcedure.input(z.object({
+      declarationNo: z.string(), salesOrderId: z.number(), customerId: z.number(),
+      productName: z.string().optional(), quantity: z.string().optional(), unit: z.string().optional(),
+      currency: z.string().optional(), amount: z.string().optional(),
+      destination: z.string().optional(), portOfLoading: z.string().optional(), portOfDischarge: z.string().optional(),
+      shippingMethod: z.enum(["sea", "air", "land", "express"]).optional(),
+      hsCode: z.string().optional(), declarationDate: z.string().optional(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { declarationDate, ...rest } = input;
+      return await createCustomsDeclaration({ ...rest, declarationDate: declarationDate ? new Date(declarationDate) as any : undefined, createdBy: ctx.user?.id });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        status: z.enum(["preparing", "submitted", "cleared", "shipped"]).optional(),
+        declarationDate: z.string().optional(), clearanceDate: z.string().optional(),
+        shippingDate: z.string().optional(), trackingNo: z.string().optional(), remark: z.string().optional(),
+        destination: z.string().optional(), portOfLoading: z.string().optional(), portOfDischarge: z.string().optional(),
+        hsCode: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { declarationDate, clearanceDate, shippingDate, ...rest } = input.data;
+      await updateCustomsDeclaration(input.id, {
+        ...rest,
+        declarationDate: declarationDate ? new Date(declarationDate) as any : undefined,
+        clearanceDate: clearanceDate ? new Date(clearanceDate) as any : undefined,
+        shippingDate: shippingDate ? new Date(shippingDate) as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteCustomsDeclaration(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 部门管理 ====================
+  departments: router({
+    list: protectedProcedure.input(z.object({ status: z.string().optional() }).optional()).query(async ({ input }) => {
+      return await getDepartments(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getDepartmentById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      code: z.string(), name: z.string(), parentId: z.number().nullable().optional(),
+      managerId: z.number().nullable().optional(), phone: z.string().optional(),
+      description: z.string().optional(), sortOrder: z.number().optional(),
+      status: z.enum(["active", "inactive"]).optional(),
+    })).mutation(async ({ input }) => {
+      return await createDepartment(input);
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        code: z.string().optional(), name: z.string().optional(), parentId: z.number().nullable().optional(),
+        managerId: z.number().nullable().optional(), phone: z.string().optional(),
+        description: z.string().optional(), sortOrder: z.number().optional(),
+        status: z.enum(["active", "inactive"]).optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateDepartment(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteDepartment(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 编码规则 ====================
+  codeRules: router({
+    list: protectedProcedure.query(async () => {
+      return await getCodeRules();
+    }),
+    create: protectedProcedure.input(z.object({
+      module: z.string(), prefix: z.string(), dateFormat: z.string().optional(),
+      seqLength: z.number().optional(), example: z.string().optional(), description: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      return await createCodeRule(input);
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        module: z.string().optional(), prefix: z.string().optional(), dateFormat: z.string().optional(),
+        seqLength: z.number().optional(), example: z.string().optional(), description: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateCodeRule(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteCodeRule(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 公司信息 ====================
+  companyInfo: router({
+    get: protectedProcedure.query(async () => {
+      return await getCompanyInfo();
+    }),
+    update: adminProcedure
+      .input(z.object({
+        logoUrl: z.string().optional(),
+        companyNameCn: z.string().optional(),
+        companyNameEn: z.string().optional(),
+        addressCn: z.string().optional(),
+        addressEn: z.string().optional(),
+        website: z.string().optional(),
+        email: z.string().optional(),
+        contactNameCn: z.string().optional(),
+        contactNameEn: z.string().optional(),
+        phone: z.string().optional(),
+        whatsapp: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await updateCompanyInfo(input);
+      }),
+    uploadLogo: adminProcedure
+      .input(z.object({
+        name: z.string(),
+        mimeType: z.string().optional(),
+        base64: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const imageExtAllowList = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".svg"]);
+        const extFromName = `.${String(input.name.split(".").pop() || "").toLowerCase()}`;
+        const ext = imageExtAllowList.has(extFromName) ? extFromName : (
+          String(input.mimeType || "").includes("png") ? ".png" :
+          String(input.mimeType || "").includes("jpeg") ? ".jpg" :
+          String(input.mimeType || "").includes("jpg") ? ".jpg" :
+          String(input.mimeType || "").includes("webp") ? ".webp" :
+          String(input.mimeType || "").includes("gif") ? ".gif" :
+          String(input.mimeType || "").includes("bmp") ? ".bmp" :
+          String(input.mimeType || "").includes("svg") ? ".svg" : ""
+        );
+        if (!imageExtAllowList.has(ext)) {
+          throw new Error("商标仅支持图片格式（jpg/png/webp/gif/bmp/svg）");
+        }
+
+        const base64Body = String(input.base64 || "").replace(/^data:[^;]+;base64,/, "");
+        const fileBuffer = Buffer.from(base64Body, "base64");
+        const saved = await saveAttachmentFile({
+          department: "系统设置",
+          businessFolder: "公司信息",
+          originalName: input.name,
+          desiredBaseName: `company-logo-${safeFileSegment(String(Date.now()))}`,
+          mimeType: input.mimeType,
+          buffer: fileBuffer,
+        });
+        const updated = await updateCompanyInfo({ logoUrl: saved.filePath });
+        return { logoUrl: saved.filePath, companyInfo: updated };
+      }),
+  }),
+
+  // ==================== 审批流程设置 ====================
+  workflowSettings: router({
+    formCatalog: protectedProcedure
+      .input(z.object({ module: z.string().optional(), status: z.string().optional(), approvalEnabled: z.boolean().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getWorkflowFormCatalog(input);
+      }),
+    getFormCatalogItem: protectedProcedure
+      .input(z.object({ module: z.string(), formType: z.string(), formName: z.string() }))
+      .query(async ({ input }) => {
+        return await getWorkflowFormCatalogItem(input);
+      }),
+    setFormApprovalEnabled: adminProcedure
+      .input(z.object({ module: z.string(), formType: z.string(), formName: z.string(), approvalEnabled: z.boolean(), path: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        await setWorkflowFormCatalogApprovalEnabled(input);
+        return { success: true };
+      }),
+    list: protectedProcedure
+      .input(z.object({ module: z.string().optional(), status: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getWorkflowTemplates(input);
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getWorkflowTemplateById(input.id);
+      }),
+    create: adminProcedure
+      .input(z.object({
+        code: z.string(),
+        name: z.string(),
+        module: z.string(),
+        formType: z.string(),
+        initiators: z.string().optional(),
+        approvalSteps: z.string().optional(),
+        handlers: z.string().optional(),
+        ccRecipients: z.string().optional(),
+        description: z.string().optional(),
+        status: z.enum(["active", "inactive"]).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await createWorkflowTemplate({
+          ...input,
+          createdBy: ctx.user?.id,
+          updatedBy: ctx.user?.id,
+        });
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          code: z.string().optional(),
+          name: z.string().optional(),
+          module: z.string().optional(),
+          formType: z.string().optional(),
+          initiators: z.string().optional(),
+          approvalSteps: z.string().optional(),
+          handlers: z.string().optional(),
+          ccRecipients: z.string().optional(),
+          description: z.string().optional(),
+          status: z.enum(["active", "inactive"]).optional(),
+        }),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await updateWorkflowTemplate(input.id, {
+          ...input.data,
+          updatedBy: ctx.user?.id,
+        });
+        return { success: true };
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await deleteWorkflowTemplate(input.id, ctx.user?.id);
+        return { success: true };
+      }),
+  }),
+
+  workflowCenter: router({
+    list: protectedProcedure
+      .input(z.object({
+        tab: z.enum(["todo", "created", "processed", "cc"]),
+        search: z.string().optional(),
+        limit: z.number().optional(),
+      }))
+      .query(async ({ input, ctx }) => {
+        return await getWorkflowCenterData({
+          operatorId: Number(ctx.user?.id || 0),
+          operatorRole: String(ctx.user?.role || ""),
+          operatorDepartment: String(ctx.user?.department || ""),
+          tab: input.tab,
+          search: input.search,
+          limit: input.limit,
+        });
+      }),
+  }),
+
+  // ==================== 人事管理 ====================
+  personnel: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), departmentId: z.number().optional(), status: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getPersonnel(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getPersonnelById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      employeeNo: z.string(), name: z.string(), gender: z.enum(["male", "female"]).optional(),
+      idCard: z.string().optional(), phone: z.string().optional(), email: z.string().optional(),
+      departmentId: z.number().nullable().optional(), position: z.string().optional(),
+      entryDate: z.string().optional(), contractExpiry: z.string().optional(),
+      education: z.string().optional(), major: z.string().optional(),
+      emergencyContact: z.string().optional(), emergencyPhone: z.string().optional(),
+      status: z.enum(["active", "probation", "resigned", "terminated"]).optional(),
+      userId: z.number().optional(), remark: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { entryDate, contractExpiry, ...rest } = input;
+      return await createPersonnel({
+        ...rest,
+        entryDate: entryDate ? new Date(entryDate) as any : undefined,
+        contractExpiry: contractExpiry ? new Date(contractExpiry) as any : undefined,
+      });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        employeeNo: z.string().optional(), name: z.string().optional(), gender: z.enum(["male", "female"]).optional(),
+        idCard: z.string().optional(), phone: z.string().optional(), email: z.string().optional(),
+        departmentId: z.number().nullable().optional(), position: z.string().optional(),
+        entryDate: z.string().optional(), contractExpiry: z.string().optional(),
+        education: z.string().optional(), major: z.string().optional(),
+        status: z.enum(["active", "probation", "resigned", "terminated"]).optional(),
+        userId: z.number().optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { entryDate, contractExpiry, ...rest } = input.data;
+      await updatePersonnel(input.id, {
+        ...rest,
+        entryDate: entryDate ? new Date(entryDate) as any : undefined,
+        contractExpiry: contractExpiry ? new Date(contractExpiry) as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deletePersonnel(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 培训管理 ====================
+  trainings: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), type: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getTrainings(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getTrainingById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      title: z.string(), type: z.enum(["onboarding", "skill", "compliance", "safety", "other"]),
+      trainerId: z.number().optional(), departmentId: z.number().optional(),
+      startDate: z.string().optional(), endDate: z.string().optional(),
+      location: z.string().optional(), participants: z.number().optional(),
+      content: z.string().optional(), status: z.enum(["planned", "in_progress", "completed", "cancelled"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { startDate, endDate, ...rest } = input;
+      return await createTraining({
+        ...rest,
+        startDate: startDate ? new Date(startDate) as any : undefined,
+        endDate: endDate ? new Date(endDate) as any : undefined,
+        createdBy: ctx.user?.id,
+      });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        title: z.string().optional(), type: z.enum(["onboarding", "skill", "compliance", "safety", "other"]).optional(),
+        trainerId: z.number().optional(), departmentId: z.number().optional(),
+        startDate: z.string().optional(), endDate: z.string().optional(),
+        location: z.string().optional(), participants: z.number().optional(),
+        content: z.string().optional(), status: z.enum(["planned", "in_progress", "completed", "cancelled"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { startDate, endDate, ...rest } = input.data;
+      await updateTraining(input.id, {
+        ...rest,
+        startDate: startDate ? new Date(startDate) as any : undefined,
+        endDate: endDate ? new Date(endDate) as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteTraining(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 内审管理 ====================
+  audits: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), type: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getAudits(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getAuditById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      auditNo: z.string(), title: z.string(),
+      type: z.enum(["internal", "external", "supplier", "process"]),
+      departmentId: z.number().optional(), auditorId: z.number().optional(),
+      auditDate: z.string().optional(), findings: z.string().optional(),
+      correctiveActions: z.string().optional(),
+      status: z.enum(["planned", "in_progress", "completed", "closed"]).optional(),
+      result: z.enum(["pass", "conditional", "fail"]).optional(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { auditDate, ...rest } = input;
+      return await createAudit({ ...rest, auditDate: auditDate ? new Date(auditDate) as any : undefined, createdBy: ctx.user?.id });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        title: z.string().optional(), type: z.enum(["internal", "external", "supplier", "process"]).optional(),
+        departmentId: z.number().optional(), auditorId: z.number().optional(),
+        auditDate: z.string().optional(), findings: z.string().optional(),
+        correctiveActions: z.string().optional(),
+        status: z.enum(["planned", "in_progress", "completed", "closed"]).optional(),
+        result: z.enum(["pass", "conditional", "fail"]).optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { auditDate, ...rest } = input.data;
+      await updateAudit(input.id, { ...rest, auditDate: auditDate ? new Date(auditDate) as any : undefined });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteAudit(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 研发项目 ====================
+  rdProjects: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), type: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getRdProjects(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getRdProjectById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      projectNo: z.string(), name: z.string(),
+      type: z.enum(["new_product", "improvement", "customization", "research"]),
+      productId: z.number().optional(), leaderId: z.number().optional(),
+      startDate: z.string().optional(), endDate: z.string().optional(),
+      budget: z.string().optional(), progress: z.number().optional(),
+      status: z.enum(["planning", "in_progress", "testing", "completed", "suspended", "cancelled"]).optional(),
+      description: z.string().optional(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { startDate, endDate, ...rest } = input;
+      return await createRdProject({
+        ...rest,
+        startDate: startDate ? new Date(startDate) as any : undefined,
+        endDate: endDate ? new Date(endDate) as any : undefined,
+        createdBy: ctx.user?.id,
+      });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        name: z.string().optional(),
+        type: z.enum(["new_product", "improvement", "customization", "research"]).optional(),
+        productId: z.number().optional(), leaderId: z.number().optional(),
+        startDate: z.string().optional(), endDate: z.string().optional(),
+        budget: z.string().optional(), progress: z.number().optional(),
+        status: z.enum(["planning", "in_progress", "testing", "completed", "suspended", "cancelled"]).optional(),
+        description: z.string().optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { startDate, endDate, ...rest } = input.data;
+      await updateRdProject(input.id, {
+        ...rest,
+        startDate: startDate ? new Date(startDate) as any : undefined,
+        endDate: endDate ? new Date(endDate) as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteRdProject(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 盘点管理 ====================
+  stocktakes: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), warehouseId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getStocktakes(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getStocktakeById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      stocktakeNo: z.string(), warehouseId: z.number(),
+      type: z.enum(["full", "partial", "spot"]),
+      stocktakeDate: z.string(), operatorId: z.number().optional(),
+      systemQty: z.string().optional(), actualQty: z.string().optional(), diffQty: z.string().optional(),
+      status: z.enum(["planned", "in_progress", "completed", "approved"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { stocktakeDate, ...rest } = input;
+      return await createStocktake({ ...rest, stocktakeDate: new Date(stocktakeDate) as any, createdBy: ctx.user?.id });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        systemQty: z.string().optional(), actualQty: z.string().optional(), diffQty: z.string().optional(),
+        status: z.enum(["planned", "in_progress", "completed", "approved"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateStocktake(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteStocktake(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 质量不良事件 ====================
+  qualityIncidents: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), type: z.string().optional(), severity: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getQualityIncidents(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getQualityIncidentById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      incidentNo: z.string(), title: z.string(),
+      type: z.enum(["complaint", "nonconformance", "capa", "recall", "deviation"]),
+      severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+      productId: z.number().optional(), batchNo: z.string().optional(),
+      description: z.string().optional(), rootCause: z.string().optional(),
+      correctiveAction: z.string().optional(), preventiveAction: z.string().optional(),
+      assigneeId: z.number().optional(), reportDate: z.string().optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { reportDate, ...rest } = input;
+      return await createQualityIncident({ ...rest, reportDate: reportDate ? new Date(reportDate) as any : undefined, reporterId: ctx.user?.id });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        title: z.string().optional(),
+        type: z.enum(["complaint", "nonconformance", "capa", "recall", "deviation"]).optional(),
+        severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+        description: z.string().optional(), rootCause: z.string().optional(),
+        correctiveAction: z.string().optional(), preventiveAction: z.string().optional(),
+        assigneeId: z.number().optional(), closeDate: z.string().optional(),
+        status: z.enum(["open", "investigating", "correcting", "verifying", "closed"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { closeDate, ...rest } = input.data;
+      await updateQualityIncident(input.id, { ...rest, closeDate: closeDate ? new Date(closeDate) as any : undefined });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteQualityIncident(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 样品管理 ====================
+  samples: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), sampleType: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getSamples(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getSampleById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      sampleNo: z.string(), productId: z.number().optional(), batchNo: z.string().optional(),
+      sampleType: z.enum(["raw_material", "semi_finished", "finished", "stability", "retention"]),
+      quantity: z.string().optional(), unit: z.string().optional(),
+      storageLocation: z.string().optional(), storageCondition: z.string().optional(),
+      samplingDate: z.string().optional(), expiryDate: z.string().optional(),
+      status: z.enum(["stored", "testing", "used", "expired", "destroyed"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { samplingDate, expiryDate, ...rest } = input;
+      return await createSample({
+        ...rest,
+        samplingDate: samplingDate ? new Date(samplingDate) as any : undefined,
+        expiryDate: expiryDate ? new Date(expiryDate) as any : undefined,
+        samplerId: ctx.user?.id,
+      });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        storageLocation: z.string().optional(), storageCondition: z.string().optional(),
+        status: z.enum(["stored", "testing", "used", "expired", "destroyed"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateSample(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteSample(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 实验室记录 ====================
+  labRecords: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), conclusion: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getLabRecords(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getLabRecordById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      recordNo: z.string(), sampleId: z.number().optional(),
+      testType: z.string(), testMethod: z.string().optional(),
+      specification: z.string().optional(), result: z.string().optional(),
+      conclusion: z.enum(["pass", "fail", "pending"]).optional(),
+      equipmentId: z.number().optional(), testDate: z.string().optional(),
+      status: z.enum(["pending", "testing", "completed", "reviewed"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { testDate, ...rest } = input;
+      return await createLabRecord({ ...rest, testDate: testDate ? new Date(testDate) as any : undefined, testerId: ctx.user?.id });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        result: z.string().optional(),
+        conclusion: z.enum(["pass", "fail", "pending"]).optional(),
+        reviewerId: z.number().optional(), reviewDate: z.string().optional(),
+        status: z.enum(["pending", "testing", "completed", "reviewed"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { reviewDate, ...rest } = input.data;
+      await updateLabRecord(input.id, { ...rest, reviewDate: reviewDate ? new Date(reviewDate) as any : undefined });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteLabRecord(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 应收账款 ====================
+  accountsReceivable: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), customerId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input, ctx }) => {
+      await syncMissingReceivablesFromSalesOrders(ctx.user?.id);
+      return await getAccountsReceivable(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getAccountsReceivableById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      invoiceNo: z.string(), customerId: z.number(), salesOrderId: z.number().optional(),
+      amount: z.string(), currency: z.string().optional(),
+      amountBase: z.string().optional(), exchangeRate: z.string().optional(),
+      bankAccountId: z.number().optional(),
+      invoiceDate: z.string().optional(), dueDate: z.string().optional(),
+      paymentMethod: z.string().optional(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { invoiceDate, dueDate, ...rest } = input;
+      return await createAccountsReceivable({
+        ...rest,
+        invoiceDate: invoiceDate ? toDateOnly(invoiceDate) : undefined,
+        dueDate: dueDate ? toDateOnly(dueDate) : undefined,
+        createdBy: ctx.user?.id,
+      });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        amount: z.string().optional(),
+        paidAmount: z.string().optional(),
+        status: z.enum(["pending", "partial", "paid", "overdue"]).optional(),
+        dueDate: z.string().optional(),
+        receiptDate: z.string().optional(), paymentMethod: z.string().optional(),
+        bankAccountId: z.number().optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { receiptDate, dueDate, ...rest } = input.data;
+      await updateAccountsReceivable(input.id, {
+        ...rest,
+        receiptDate: receiptDate ? toDateOnly(receiptDate) : undefined,
+        dueDate: dueDate ? toDateOnly(dueDate) : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteAccountsReceivable(input.id); return { success: true };
+    }),
+    syncFromSalesOrders: protectedProcedure.mutation(async ({ ctx }) => {
+      const result = await syncMissingReceivablesFromSalesOrders(ctx.user?.id);
+      return { success: true, ...result };
+    }),
+  }),
+
+  // ==================== 应付账款 ====================
+  accountsPayable: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), supplierId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getAccountsPayable(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getAccountsPayableById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      invoiceNo: z.string(), supplierId: z.number(), purchaseOrderId: z.number().optional(),
+      amount: z.string(), currency: z.string().optional(),
+      amountBase: z.string().optional(), exchangeRate: z.string().optional(),
+      bankAccountId: z.number().optional(),
+      invoiceDate: z.string().optional(), dueDate: z.string().optional(),
+      paymentMethod: z.string().optional(), remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { invoiceDate, dueDate, ...rest } = input;
+      return await createAccountsPayable({
+        ...rest,
+        invoiceDate: invoiceDate ? new Date(invoiceDate) as any : undefined,
+        dueDate: dueDate ? new Date(dueDate) as any : undefined,
+        createdBy: ctx.user?.id,
+      });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        paidAmount: z.string().optional(),
+        status: z.enum(["pending", "partial", "paid", "overdue"]).optional(),
+        paymentDate: z.string().optional(), paymentMethod: z.string().optional(),
+        bankAccountId: z.number().optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { paymentDate, ...rest } = input.data;
+      await updateAccountsPayable(input.id, { ...rest, paymentDate: paymentDate ? new Date(paymentDate) as any : undefined });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteAccountsPayable(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 经销商资质 ====================
+  dealerQualifications: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getDealerQualifications(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getDealerQualificationById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      customerId: z.number(), businessLicense: z.string().optional(),
+      operatingLicense: z.string().optional(), licenseExpiry: z.string().optional(),
+      authorizationNo: z.string().optional(), authorizationExpiry: z.string().optional(),
+      territory: z.string().optional(), contractNo: z.string().optional(), contractExpiry: z.string().optional(),
+      status: z.enum(["pending", "approved", "expired", "terminated"]).optional(),
+    })).mutation(async ({ input }) => {
+      const { licenseExpiry, authorizationExpiry, contractExpiry, ...rest } = input;
+      return await createDealerQualification({
+        ...rest,
+        licenseExpiry: licenseExpiry ? new Date(licenseExpiry) as any : undefined,
+        authorizationExpiry: authorizationExpiry ? new Date(authorizationExpiry) as any : undefined,
+        contractExpiry: contractExpiry ? new Date(contractExpiry) as any : undefined,
+      } as any);
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        businessLicense: z.string().optional(), operatingLicense: z.string().optional(),
+        licenseExpiry: z.string().optional(), authorizationNo: z.string().optional(),
+        authorizationExpiry: z.string().optional(), territory: z.string().optional(),
+        contractNo: z.string().optional(), contractExpiry: z.string().optional(),
+        status: z.enum(["pending", "approved", "expired", "terminated"]).optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { licenseExpiry, authorizationExpiry, contractExpiry, ...rest } = input.data;
+      await updateDealerQualification(input.id, {
+        ...rest,
+        licenseExpiry: licenseExpiry ? new Date(licenseExpiry) as any : undefined,
+        authorizationExpiry: authorizationExpiry ? new Date(authorizationExpiry) as any : undefined,
+        contractExpiry: contractExpiry ? new Date(contractExpiry) as any : undefined,
+      } as any);
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteDealerQualification(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 设备管理 ====================
+  equipment: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), department: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getEquipment(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getEquipmentById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      code: z.string(), name: z.string(), model: z.string().optional(),
+      manufacturer: z.string().optional(), serialNo: z.string().optional(),
+      purchaseDate: z.string().optional(), installDate: z.string().optional(),
+      location: z.string().optional(), department: z.string().optional(),
+      status: z.enum(["normal", "maintenance", "repair", "scrapped"]).optional(),
+      nextMaintenanceDate: z.string().optional(), remark: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { purchaseDate, installDate, nextMaintenanceDate, ...rest } = input;
+      return await createEquipment({
+        ...rest,
+        purchaseDate: purchaseDate ? new Date(purchaseDate) as any : undefined,
+        installDate: installDate ? new Date(installDate) as any : undefined,
+        nextMaintenanceDate: nextMaintenanceDate ? new Date(nextMaintenanceDate) as any : undefined,
+      });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(), data: z.object({
+        name: z.string().optional(), model: z.string().optional(),
+        manufacturer: z.string().optional(), serialNo: z.string().optional(),
+        location: z.string().optional(), department: z.string().optional(),
+        status: z.enum(["normal", "maintenance", "repair", "scrapped"]).optional(),
+        nextMaintenanceDate: z.string().optional(), remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { nextMaintenanceDate, ...rest } = input.data;
+      await updateEquipment(input.id, { ...rest, nextMaintenanceDate: nextMaintenanceDate ? new Date(nextMaintenanceDate) as any : undefined });
+      return { success: true };
+    }),
+     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteEquipment(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 生产计划（看板） ====================
+  productionPlans: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), planType: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getProductionPlans(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getProductionPlanById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      planNo: z.string(),
+      planType: z.enum(["sales_driven", "internal"]),
+      salesOrderId: z.number().optional(),
+      salesOrderNo: z.string().optional(),
+      productId: z.number(),
+      productName: z.string().optional(),
+      plannedQty: z.string(),
+      unit: z.string().optional(),
+      batchNo: z.string().optional(),
+      plannedStartDate: z.string().optional(),
+      plannedEndDate: z.string().optional(),
+      priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+      status: z.enum(["pending", "scheduled", "in_progress", "completed", "cancelled"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { plannedStartDate, plannedEndDate, ...rest } = input;
+      const id = await createProductionPlan({
+        ...rest,
+        plannedStartDate: plannedStartDate ? new Date(plannedStartDate) as any : undefined,
+        plannedEndDate: plannedEndDate ? new Date(plannedEndDate) as any : undefined,
+        createdBy: ctx.user?.id,
+      });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.object({
+        planType: z.enum(["sales_driven", "internal"]).optional(),
+        salesOrderId: z.number().optional(),
+        salesOrderNo: z.string().optional(),
+        productName: z.string().optional(),
+        plannedQty: z.string().optional(),
+        unit: z.string().optional(),
+        batchNo: z.string().optional(),
+        plannedStartDate: z.string().optional(),
+        plannedEndDate: z.string().optional(),
+        priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+        status: z.enum(["pending", "scheduled", "in_progress", "completed", "cancelled"]).optional(),
+        productionOrderId: z.number().optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { plannedStartDate, plannedEndDate, ...rest } = input.data;
+      await updateProductionPlan(input.id, {
+        ...rest,
+        plannedStartDate: plannedStartDate ? new Date(plannedStartDate) as any : undefined,
+        plannedEndDate: plannedEndDate ? new Date(plannedEndDate) as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteProductionPlan(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 领料单 ====================
+  materialRequisitionOrders: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getMaterialRequisitionOrders(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getMaterialRequisitionOrderById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      requisitionNo: z.string(),
+      productionOrderId: z.number().optional(),
+      productionOrderNo: z.string().optional(),
+      warehouseId: z.number().optional(),
+      applicantId: z.number().optional(),
+      applicationDate: z.string().optional(),
+      status: z.enum(["draft", "pending", "approved", "issued", "rejected"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { applicationDate, ...rest } = input;
+      const id = await createMaterialRequisitionOrder({
+        ...rest,
+        applicationDate: applicationDate ? new Date(applicationDate) as any : undefined,
+        createdBy: ctx.user?.id,
+      });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.object({
+        status: z.enum(["draft", "pending", "approved", "issued", "rejected"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateMaterialRequisitionOrder(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteMaterialRequisitionOrder(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 生产记录单 ====================
+  productionRecords: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getProductionRecords(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getProductionRecordById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      recordNo: z.string(),
+      productionOrderId: z.number().optional(),
+      productionOrderNo: z.string().optional(),
+      productId: z.number().optional(),
+      productName: z.string().optional(),
+      batchNo: z.string().optional(),
+      workstationName: z.string().optional(),
+      operatorId: z.number().optional(),
+      recordDate: z.string().optional(),
+      plannedQty: z.string().optional(),
+      actualQty: z.string().optional(),
+      scrapQty: z.string().optional(),
+      status: z.enum(["in_progress", "completed", "abnormal"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { recordDate, ...rest } = input;
+      const id = await createProductionRecord({
+        ...rest,
+        recordDate: recordDate ? new Date(recordDate) as any : undefined,
+        createdBy: ctx.user?.id,
+      });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.object({
+        actualQty: z.string().optional(),
+        scrapQty: z.string().optional(),
+        status: z.enum(["in_progress", "completed", "abnormal"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateProductionRecord(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteProductionRecord(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 生产流转单 ====================
+  productionRoutingCards: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getProductionRoutingCards(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getProductionRoutingCardById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      cardNo: z.string(),
+      productionOrderId: z.number().optional(),
+      productionOrderNo: z.string().optional(),
+      productId: z.number().optional(),
+      productName: z.string().optional(),
+      batchNo: z.string().optional(),
+      quantity: z.string().optional(),
+      unit: z.string().optional(),
+      currentProcess: z.string().optional(),
+      nextProcess: z.string().optional(),
+      needsSterilization: z.boolean().optional(),
+      status: z.enum(["in_process", "pending_sterilization", "sterilizing", "completed"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const id = await createProductionRoutingCard({ ...input, createdBy: ctx.user?.id });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.object({
+        currentProcess: z.string().optional(),
+        nextProcess: z.string().optional(),
+        needsSterilization: z.boolean().optional(),
+        status: z.enum(["in_process", "pending_sterilization", "sterilizing", "completed"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateProductionRoutingCard(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteProductionRoutingCard(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 委外灭菌单 ====================
+  sterilizationOrders: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getSterilizationOrders(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getSterilizationOrderById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      orderNo: z.string(),
+      routingCardId: z.number().optional(),
+      routingCardNo: z.string().optional(),
+      productionOrderId: z.number().optional(),
+      productionOrderNo: z.string().optional(),
+      productId: z.number().optional(),
+      productName: z.string().optional(),
+      batchNo: z.string().optional(),
+      quantity: z.string().optional(),
+      unit: z.string().optional(),
+      sterilizationMethod: z.string().optional(),
+      supplierId: z.number().optional(),
+      supplierName: z.string().optional(),
+      sendDate: z.string().optional(),
+      expectedReturnDate: z.string().optional(),
+      status: z.enum(["draft", "sent", "processing", "returned", "qualified", "unqualified"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { sendDate, expectedReturnDate, ...rest } = input;
+      const id = await createSterilizationOrder({
+        ...rest,
+        sendDate: sendDate ? new Date(sendDate) as any : undefined,
+        expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) as any : undefined,
+        createdBy: ctx.user?.id,
+      });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.object({
+        sterilizationMethod: z.string().optional(),
+        supplierName: z.string().optional(),
+        sendDate: z.string().optional(),
+        expectedReturnDate: z.string().optional(),
+        actualReturnDate: z.string().optional(),
+        status: z.enum(["draft", "sent", "processing", "returned", "qualified", "unqualified"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      const { sendDate, expectedReturnDate, actualReturnDate, ...rest } = input.data;
+      await updateSterilizationOrder(input.id, {
+        ...rest,
+        sendDate: sendDate ? new Date(sendDate) as any : undefined,
+        expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) as any : undefined,
+        actualReturnDate: actualReturnDate ? new Date(actualReturnDate) as any : undefined,
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteSterilizationOrder(input.id); return { success: true };
+    }),
+  }),
+
+  // ==================== 生产入库申请 ====================
+  productionWarehouseEntries: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getProductionWarehouseEntries(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getProductionWarehouseEntryById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      entryNo: z.string(),
+      productionOrderId: z.number().optional(),
+      productionOrderNo: z.string().optional(),
+      sterilizationOrderId: z.number().optional(),
+      sterilizationOrderNo: z.string().optional(),
+      productId: z.number().optional(),
+      productName: z.string().optional(),
+      batchNo: z.string().optional(),
+      quantity: z.string().optional(),
+      unit: z.string().optional(),
+      targetWarehouseId: z.number().optional(),
+      applicantId: z.number().optional(),
+      applicationDate: z.string().optional(),
+      status: z.enum(["draft", "pending", "approved", "completed", "rejected"]).optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { applicationDate, ...rest } = input;
+      const id = await createProductionWarehouseEntry({
+        ...rest,
+        applicationDate: applicationDate ? new Date(applicationDate) as any : undefined,
+        createdBy: ctx.user?.id,
+      });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.object({
+        quantity: z.string().optional(),
+        targetWarehouseId: z.number().optional(),
+        status: z.enum(["draft", "pending", "approved", "completed", "rejected"]).optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateProductionWarehouseEntry(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteProductionWarehouseEntry(input.id); return { success: true };
+    }),
+  }),
+});
+export type AppRouter = typeof appRouter;

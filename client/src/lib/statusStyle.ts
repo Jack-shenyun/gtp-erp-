@@ -1,0 +1,29 @@
+export function getStatusSemanticClass(status: unknown, label?: unknown): string {
+  const text = `${String(status ?? "")} ${String(label ?? "")}`.toLowerCase();
+
+  const isDanger =
+    /不合格|失败|拒绝|驳回|逾期|取消|异常|黑名单|unqualified|failed|reject|rejected|overdue|cancel|abnormal|error/.test(
+      text
+    );
+  if (isDanger) {
+    return "border-transparent bg-red-600 text-white";
+  }
+
+  const isDone =
+    /完成|已完成|已收款|已付款|已通过|合格|已审批|approved|completed|done|paid|received|qualified|pass|active/.test(
+      text
+    );
+  if (isDone) {
+    return "border-transparent bg-green-600 text-white";
+  }
+
+  const isProgress =
+    /进行|处理中|审核中|待|草稿|计划|in_progress|processing|review|pending|draft|planned/.test(
+      text
+    );
+  if (isProgress) {
+    return "border-transparent bg-amber-500 text-black";
+  }
+
+  return "";
+}

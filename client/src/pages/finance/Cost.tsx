@@ -1,0 +1,497 @@
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import ERPLayout from "@/components/ERPLayout";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Calculator,
+  Plus,
+  Search,
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  Eye,
+  CheckCircle,
+} from "lucide-react";
+import { toast } from "sonner";
+import { usePermission } from "@/hooks/usePermission";
+import { formatNumber, safeLower, toSafeNumber } from "@/lib/formatters";
+
+interface CostRecord {
+  id: number;
+  period: string;
+  productName: string;
+  batchNo: string;
+  materialCost: number;
+  laborCost: number;
+  overheadCost: number;
+  totalCost: number;
+  status: "calculating" | "completed" | "adjusted";
+  remarks: string;
+}
+
+const statusMap: Record<string, any> = {
+  calculating: { label: "核算中", variant: "outline" as const },
+  completed: { label: "已完成", variant: "default" as const },
+  adjusted: { label: "已调整", variant: "secondary" as const },
+};
+
+function getStatusMeta(status: unknown) {
+  return statusMap[String(status ?? "")] ?? statusMap.calculating;
+}
+
+
+
+export default function CostPage() {
+  const { data: _dbData = [], isLoading, refetch } = trpc.paymentRecords.list.useQuery();
+  const createMutation = trpc.paymentRecords.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
+  const updateMutation = trpc.paymentRecords.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
+  const deleteMutation = trpc.paymentRecords.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
+  const costs = _dbData as any[];
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [editingCost, setEditingCost] = useState<CostRecord | null>(null);
+  const [viewingCost, setViewingCost] = useState<CostRecord | null>(null);
+  const { canDelete } = usePermission();
+
+  const [formData, setFormData] = useState({
+    period: "",
+    productName: "",
+    batchNo: "",
+    materialCost: "",
+    laborCost: "",
+    overheadCost: "",
+    remarks: "",
+  });
+
+  const filteredCosts = costs.filter((c: any) => {
+    const matchesSearch =
+      safeLower(c.productName).includes(safeLower(searchTerm)) ||
+      safeLower(c.batchNo).includes(safeLower(searchTerm));
+    const matchesStatus = statusFilter === "all" || c.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleAdd = () => {
+    setEditingCost(null);
+    const today = new Date();
+    setFormData({
+      period: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`,
+      productName: "",
+      batchNo: "",
+      materialCost: "",
+      laborCost: "",
+      overheadCost: "",
+      remarks: "",
+    });
+    setDialogOpen(true);
+  };
+
+  const handleEdit = (cost: CostRecord) => {
+    setEditingCost(cost);
+    setFormData({
+      period: cost.period,
+      productName: cost.productName,
+      batchNo: cost.batchNo,
+      materialCost: String(cost.materialCost),
+      laborCost: String(cost.laborCost),
+      overheadCost: String(cost.overheadCost),
+      remarks: cost.remarks,
+    });
+    setDialogOpen(true);
+  };
+
+  const handleView = (cost: CostRecord) => {
+    setViewingCost(cost);
+    setViewDialogOpen(true);
+  };
+
+  const handleDelete = (cost: CostRecord) => {
+    if (!canDelete) {
+      toast.error("您没有删除权限", { description: "只有管理员可以删除成本记录" });
+      return;
+    }
+    deleteMutation.mutate({ id: cost.id });
+    toast.success("成本记录已删除");
+  };
+
+  const handleComplete = (cost: CostRecord) => {
+    toast.success("成本核算已完成");
+  };
+
+  const handleSubmit = () => {
+    if (!formData.period || !formData.productName || !formData.batchNo) {
+      toast.error("请填写必填项", { description: "核算期间、产品名称和批次号为必填" });
+      return;
+    }
+
+    const materialCost = parseFloat(formData.materialCost) || 0;
+    const laborCost = parseFloat(formData.laborCost) || 0;
+    const overheadCost = parseFloat(formData.overheadCost) || 0;
+    const totalCost = materialCost + laborCost + overheadCost;
+
+    if (editingCost) {
+      toast.success("成本记录已更新");
+    } else {
+      const newCost: CostRecord = {
+        id: Math.max(...costs.map((c: any) => c.id)) + 1,
+        ...formData,
+        materialCost,
+        laborCost,
+        overheadCost,
+        totalCost,
+        status: "calculating",
+      };
+      toast.success("成本记录创建成功");
+    }
+    setDialogOpen(false);
+  };
+
+  const totalMaterialCost = costs.reduce((sum: any, c: any) => sum + toSafeNumber(c.materialCost), 0);
+  const totalLaborCost = costs.reduce((sum: any, c: any) => sum + toSafeNumber(c.laborCost), 0);
+  const totalOverheadCost = costs.reduce((sum: any, c: any) => sum + toSafeNumber(c.overheadCost), 0);
+  const totalCost = costs.reduce((sum: any, c: any) => sum + toSafeNumber(c.totalCost), 0);
+
+  return (
+    <ERPLayout>
+      <div className="space-y-6">
+        {/* 页面标题 */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Calculator className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold tracking-tight">成本核算</h2>
+              <p className="text-sm text-muted-foreground">按批次或期间进行产品成本归集和分摊</p>
+            </div>
+          </div>
+          <Button onClick={handleAdd}>
+            <Plus className="h-4 w-4 mr-1" />
+            新建核算
+          </Button>
+        </div>
+
+        {/* 统计卡片 */}
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">总成本</p>
+              <p className="text-2xl font-bold">¥{(totalCost / 10000).toFixed(1)}万</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">材料成本</p>
+              <p className="text-2xl font-bold text-blue-600">¥{(totalMaterialCost / 10000).toFixed(1)}万</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">人工成本</p>
+              <p className="text-2xl font-bold text-green-600">¥{(totalLaborCost / 10000).toFixed(1)}万</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">制造费用</p>
+              <p className="text-2xl font-bold text-amber-600">¥{(totalOverheadCost / 10000).toFixed(1)}万</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 搜索和筛选 */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="搜索产品名称、批次号..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full md:w-[130px]">
+                  <SelectValue placeholder="状态筛选" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="calculating">核算中</SelectItem>
+                  <SelectItem value="completed">已完成</SelectItem>
+                  <SelectItem value="adjusted">已调整</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 数据表格 */}
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[90px]">核算期间</TableHead>
+                  <TableHead>产品名称</TableHead>
+                  <TableHead className="w-[110px]">批次号</TableHead>
+                  <TableHead className="w-[100px] text-right">材料成本</TableHead>
+                  <TableHead className="w-[100px] text-right">人工成本</TableHead>
+                  <TableHead className="w-[100px] text-right">制造费用</TableHead>
+                  <TableHead className="w-[100px] text-right">总成本</TableHead>
+                  <TableHead className="w-[80px]">状态</TableHead>
+                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredCosts.map((cost: any) => (
+                  <TableRow key={cost.id}>
+                    <TableCell>{cost.period}</TableCell>
+                    <TableCell className="font-medium">{cost.productName}</TableCell>
+                    <TableCell>{cost.batchNo}</TableCell>
+                    <TableCell className="text-right">¥{formatNumber(cost.materialCost)}</TableCell>
+                    <TableCell className="text-right">¥{formatNumber(cost.laborCost)}</TableCell>
+                    <TableCell className="text-right">¥{formatNumber(cost.overheadCost)}</TableCell>
+                    <TableCell className="text-right font-medium">¥{formatNumber(cost.totalCost)}</TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusMeta(cost.status).variant}>
+                        {getStatusMeta(cost.status).label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleView(cost)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            查看详情
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleEdit(cost)}>
+                            <Edit className="h-4 w-4 mr-2" />
+                            编辑
+                          </DropdownMenuItem>
+                          {cost.status === "calculating" && (
+                            <DropdownMenuItem onClick={() => handleComplete(cost)}>
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              完成核算
+                            </DropdownMenuItem>
+                          )}
+                          {canDelete && (
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(cost)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              删除
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {/* 新建/编辑对话框 */}
+        <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DraggableDialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingCost ? "编辑成本核算" : "新建成本核算"}</DialogTitle>
+              <DialogDescription>
+                {editingCost ? "修改成本核算信息" : "创建新的成本核算记录"}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>核算期间 *</Label>
+                  <Input
+                    type="month"
+                    value={formData.period}
+                    onChange={(e) => setFormData({ ...formData, period: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>批次号 *</Label>
+                  <Input
+                    value={formData.batchNo}
+                    onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })}
+                    placeholder="批次号"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>产品名称 *</Label>
+                <Input
+                  value={formData.productName}
+                  onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+                  placeholder="产品名称"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>材料成本</Label>
+                  <Input
+                    type="number"
+                    value={formData.materialCost}
+                    onChange={(e) => setFormData({ ...formData, materialCost: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>人工成本</Label>
+                  <Input
+                    type="number"
+                    value={formData.laborCost}
+                    onChange={(e) => setFormData({ ...formData, laborCost: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>制造费用</Label>
+                  <Input
+                    type="number"
+                    value={formData.overheadCost}
+                    onChange={(e) => setFormData({ ...formData, overheadCost: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex justify-between text-sm">
+                  <span>总成本</span>
+                    <span className="font-medium">
+                    ¥{formatNumber(
+                      (parseFloat(formData.materialCost) || 0) +
+                      (parseFloat(formData.laborCost) || 0) +
+                      (parseFloat(formData.overheadCost) || 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>备注</Label>
+                <Textarea
+                  value={formData.remarks}
+                  onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                  placeholder="备注信息"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                取消
+              </Button>
+              <Button onClick={handleSubmit}>
+                {editingCost ? "保存修改" : "创建记录"}
+              </Button>
+            </DialogFooter>
+          </DraggableDialogContent>
+        </DraggableDialog>
+
+        {/* 查看详情对话框 */}
+        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+          <DraggableDialogContent>
+            <DialogHeader>
+              <DialogTitle>成本核算详情</DialogTitle>
+              <DialogDescription>{viewingCost?.batchNo}</DialogDescription>
+            </DialogHeader>
+            {viewingCost && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                  <div>
+                    <h3 className="font-semibold">{viewingCost.productName}</h3>
+                    <p className="text-sm text-muted-foreground">核算期间: {viewingCost.period}</p>
+                  </div>
+                  <Badge variant={getStatusMeta(viewingCost.status).variant}>
+                    {getStatusMeta(viewingCost.status).label}
+                  </Badge>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-muted-foreground">材料成本</span>
+                    <span className="font-medium text-blue-600">¥{formatNumber(viewingCost.materialCost)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-muted-foreground">人工成本</span>
+                    <span className="font-medium text-green-600">¥{formatNumber(viewingCost.laborCost)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-muted-foreground">制造费用</span>
+                    <span className="font-medium text-amber-600">¥{formatNumber(viewingCost.overheadCost)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="font-medium">总成本</span>
+                    <span className="font-bold text-lg">¥{formatNumber(viewingCost.totalCost)}</span>
+                  </div>
+                </div>
+
+                {viewingCost.remarks && (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">备注</p>
+                    <p className="text-sm">{viewingCost.remarks}</p>
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
+                关闭
+              </Button>
+              <Button onClick={() => {
+                setViewDialogOpen(false);
+                if (viewingCost) handleEdit(viewingCost);
+              }}>
+                编辑
+              </Button>
+            </DialogFooter>
+          </DraggableDialogContent>
+        </DraggableDialog>
+      </div>
+    </ERPLayout>
+  );
+}

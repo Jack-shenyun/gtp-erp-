@@ -1,0 +1,55 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  Briefcase,
+  Calculator,
+  ClipboardCheck,
+  Factory,
+  FlaskConical,
+  Globe,
+  Handshake,
+  Mail,
+  Megaphone,
+  NotebookText,
+  Settings,
+  ShoppingCart,
+  Truck,
+  Warehouse,
+} from "lucide-react";
+
+export type WorkbenchAppEntry = {
+  id: string;
+  menuId: string;
+  label: string;
+  path: string;
+  icon: LucideIcon;
+  color: string;
+};
+
+export const WORKBENCH_APP_ENTRIES: readonly WorkbenchAppEntry[] = [
+  { id: "admin", menuId: "admin", label: "管理部", path: "/admin/documents", icon: Briefcase, color: "from-sky-500 to-blue-600" },
+  { id: "investment", menuId: "investment", label: "招商部", path: "/investment/dealer", icon: Handshake, color: "from-cyan-500 to-teal-600" },
+  { id: "sales", menuId: "sales", label: "销售部", path: "/sales/orders", icon: ShoppingCart, color: "from-emerald-500 to-green-600" },
+  { id: "rd", menuId: "rd", label: "研发部", path: "/rd/products", icon: FlaskConical, color: "from-violet-500 to-indigo-600" },
+  { id: "production", menuId: "production", label: "生产部", path: "/production/orders", icon: Factory, color: "from-orange-500 to-amber-600" },
+  { id: "batch-records", menuId: "production", label: "批记录管理", path: "/production/records", icon: NotebookText, color: "from-fuchsia-500 to-pink-600" },
+  { id: "quality", menuId: "quality", label: "质量部", path: "/quality/lab", icon: ClipboardCheck, color: "from-rose-500 to-red-600" },
+  { id: "purchase", menuId: "purchase", label: "采购部", path: "/purchase/orders", icon: Truck, color: "from-cyan-500 to-sky-600" },
+  { id: "warehouse", menuId: "warehouse", label: "仓库管理", path: "/warehouse/warehouses", icon: Warehouse, color: "from-slate-500 to-gray-600" },
+  { id: "finance", menuId: "finance", label: "财务部", path: "/finance/receivable", icon: Calculator, color: "from-lime-500 to-green-700" },
+  { id: "settings", menuId: "settings", label: "系统设置", path: "/settings/users", icon: Settings, color: "from-gray-500 to-zinc-700" },
+  { id: "mail-collaboration", menuId: "common", label: "邮件协同", path: "", icon: Mail, color: "from-blue-500 to-cyan-600" },
+  { id: "website-management", menuId: "common", label: "网站管理", path: "", icon: Globe, color: "from-indigo-500 to-blue-700" },
+  { id: "lead-marketing", menuId: "common", label: "获客营销", path: "", icon: Megaphone, color: "from-pink-500 to-rose-600" },
+] as const;
+
+export const WORKBENCH_APP_OPTIONS = WORKBENCH_APP_ENTRIES.map((item) => ({
+  id: item.id,
+  label: item.label,
+}));
+
+export function parseVisibleAppIds(raw: unknown): string[] {
+  return String(raw ?? "")
+    .split(/[,\uFF0C;；/、|\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}

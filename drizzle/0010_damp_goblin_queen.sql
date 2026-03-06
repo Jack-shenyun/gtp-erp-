@@ -1,0 +1,2 @@
+ALTER TABLE `products` ADD `salePermission` enum('saleable','not_saleable') DEFAULT 'saleable' NOT NULL;--> statement-breakpoint
+ALTER TABLE `products` ADD `procurePermission` enum('purchasable','production_only') DEFAULT 'purchasable' NOT NULL;

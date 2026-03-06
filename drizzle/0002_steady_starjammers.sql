@@ -1,0 +1,42 @@
+CREATE TABLE `electronic_signatures` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`documentType` enum('IQC','IPQC','OQC','release','review','approval') NOT NULL,
+	`documentId` int NOT NULL,
+	`documentNo` varchar(50) NOT NULL,
+	`signatureType` enum('inspector','reviewer','approver') NOT NULL,
+	`signatureAction` varchar(100) NOT NULL,
+	`signerId` int NOT NULL,
+	`signerName` varchar(100) NOT NULL,
+	`signerTitle` varchar(100),
+	`signerDepartment` varchar(100),
+	`signatureMethod` enum('password','pin','biometric') NOT NULL DEFAULT 'password',
+	`verificationHash` varchar(256),
+	`signedAt` timestamp NOT NULL,
+	`signatureMeaning` text NOT NULL,
+	`status` enum('valid','revoked') NOT NULL DEFAULT 'valid',
+	`revokedAt` timestamp,
+	`revokedReason` text,
+	`ipAddress` varchar(50),
+	`userAgent` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `electronic_signatures_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `signature_audit_log` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`signatureId` int,
+	`documentType` varchar(50) NOT NULL,
+	`documentId` int NOT NULL,
+	`documentNo` varchar(50) NOT NULL,
+	`action` enum('signature_requested','signature_completed','signature_rejected','signature_revoked','document_modified','verification_failed','access_denied') NOT NULL,
+	`userId` int,
+	`userName` varchar(100),
+	`userRole` varchar(50),
+	`details` text,
+	`previousValue` text,
+	`newValue` text,
+	`ipAddress` varchar(50),
+	`userAgent` text,
+	`timestamp` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `signature_audit_log_id` PRIMARY KEY(`id`)
+);

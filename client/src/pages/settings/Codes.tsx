@@ -1,0 +1,620 @@
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import ERPLayout from "@/components/ERPLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Hash,
+  Plus,
+  Search,
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  Eye,
+  RefreshCw,
+  Copy,
+} from "lucide-react";
+import { toast } from "sonner";
+import { usePermission } from "@/hooks/usePermission";
+import { useOperationLog } from "@/hooks/useOperationLog";
+
+interface CodeRule {
+  id: number;
+  name: string;
+  prefix: string;
+  dateFormat: string;
+  serialLength: number;
+  currentSerial: number;
+  separator: string;
+  example: string;
+  module: string;
+  status: "active" | "inactive";
+  description: string;
+}
+
+// 模拟数据
+
+
+const moduleOptions = [
+  { label: "管理部", value: "管理部" },
+  { label: "招商部", value: "招商部" },
+  { label: "销售部", value: "销售部" },
+  { label: "研发部", value: "研发部" },
+  { label: "生产部", value: "生产部" },
+  { label: "质量部", value: "质量部" },
+  { label: "采购部", value: "采购部" },
+  { label: "仓库管理", value: "仓库管理" },
+  { label: "财务部", value: "财务部" },
+];
+
+const dateFormatOptions = [
+  { label: "无日期", value: "" },
+  { label: "YYYYMMDD (20260202)", value: "YYYYMMDD" },
+  { label: "YYYYMM (202602)", value: "YYYYMM" },
+  { label: "YYYY (2026)", value: "YYYY" },
+];
+
+export default function CodesPage() {
+  const { data: _dbData = [], isLoading, refetch } = trpc.codeRules.list.useQuery();
+  const createMutation = trpc.codeRules.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
+  const updateMutation = trpc.codeRules.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
+  const deleteMutation = trpc.codeRules.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
+  const codeRules = _dbData as any[];
+  const [searchTerm, setSearchTerm] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<CodeRule | null>(null);
+  const [viewingRule, setViewingRule] = useState<CodeRule | null>(null);
+  const { canDelete } = usePermission();
+  const { logOperation } = useOperationLog();
+
+  const [formData, setFormData] = useState({
+    name: "",
+    prefix: "",
+    dateFormat: "",
+    serialLength: 4,
+    separator: "-",
+    module: "",
+    status: "active",
+    description: "",
+  });
+
+  const filteredRules = codeRules.filter(
+    (rule) =>
+      String(rule.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(rule.prefix ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(rule.module ?? "").toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // 生成示例编码
+  const generateExample = () => {
+    const { prefix, dateFormat, serialLength, separator } = formData;
+    let example = prefix;
+    
+    if (dateFormat) {
+      const now = new Date();
+      let dateStr = "";
+      if (dateFormat === "YYYYMMDD") {
+        dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+      } else if (dateFormat === "YYYYMM") {
+        dateStr = now.toISOString().slice(0, 7).replace(/-/g, "");
+      } else if (dateFormat === "YYYY") {
+        dateStr = now.getFullYear().toString();
+      }
+      example += separator + dateStr;
+    }
+    
+    example += separator + "0001".padStart(serialLength, "0");
+    return example;
+  };
+
+  const handleAdd = () => {
+    setEditingRule(null);
+    setFormData({
+      name: "",
+      prefix: "",
+      dateFormat: "",
+      serialLength: 4,
+      separator: "-",
+      module: "",
+      status: "active",
+      description: "",
+    });
+    setDialogOpen(true);
+  };
+
+  const handleEdit = (rule: CodeRule) => {
+    setEditingRule(rule);
+    setFormData({
+      name: rule.name,
+      prefix: rule.prefix,
+      dateFormat: rule.dateFormat,
+      serialLength: rule.serialLength,
+      separator: rule.separator,
+      module: rule.module,
+      status: rule.status,
+      description: rule.description,
+    });
+    setDialogOpen(true);
+  };
+
+  const handleView = (rule: CodeRule) => {
+    setViewingRule(rule);
+    setViewDialogOpen(true);
+  };
+
+  const handleDelete = (rule: CodeRule) => {
+    if (!canDelete) {
+      toast.error("您没有删除权限", { description: "只有管理员可以删除编码规则" });
+      return;
+    }
+    deleteMutation.mutate({ id: rule.id });
+    
+    // 记录操作日志
+    logOperation({
+      module: "code_rule",
+      action: "delete",
+      targetType: "编码规则",
+      targetId: rule.id,
+      targetName: rule.name,
+      description: `删除编码规则：${rule.name}`,
+      previousData: rule as unknown as Record<string, unknown>,
+    });
+    
+    toast.success("删除成功");
+  };
+
+  const handleResetSerial = (rule: CodeRule) => {
+    // 记录操作日志
+    logOperation({
+      module: "code_rule",
+      action: "reset",
+      targetType: "编码规则",
+      targetId: rule.id,
+      targetName: rule.name,
+      description: `重置编码规则流水号：${rule.name}`,
+      previousData: { currentSerial: rule.currentSerial },
+      newData: { currentSerial: 0 },
+    });
+    
+    toast.success("流水号已重置");
+  };
+
+  const handleCopyExample = (example: string) => {
+    navigator.clipboard.writeText(example);
+    toast.success("已复制到剪贴板");
+  };
+
+  const handleSubmit = () => {
+    if (!formData.name || !formData.prefix) {
+      toast.error("请填写必填项");
+      return;
+    }
+
+    const example = generateExample();
+
+    if (editingRule) {
+      // 记录操作日志
+      logOperation({
+        module: "code_rule",
+        action: "update",
+        targetType: "编码规则",
+        targetId: editingRule.id,
+        targetName: formData.name,
+        description: `编辑编码规则：${formData.name}`,
+        previousData: editingRule as unknown as Record<string, unknown>,
+        newData: formData as unknown as Record<string, unknown>,
+      });
+      
+      toast.success("编码规则已更新");
+    } else {
+      const newRule: CodeRule = {
+        id: Math.max(...codeRules.map((r: any) => r.id)) + 1,
+        name: formData.name,
+        prefix: formData.prefix,
+        dateFormat: formData.dateFormat,
+        serialLength: formData.serialLength,
+        currentSerial: 0,
+        separator: formData.separator,
+        example,
+        module: formData.module,
+        status: formData.status as "active" | "inactive",
+        description: formData.description,
+      };
+      // 记录操作日志
+      logOperation({
+        module: "code_rule",
+        action: "create",
+        targetType: "编码规则",
+        targetId: newRule.id,
+        targetName: newRule.name,
+        description: `新建编码规则：${newRule.name}`,
+        newData: newRule as unknown as Record<string, unknown>,
+      });
+      
+      toast.success("编码规则创建成功");
+    }
+    setDialogOpen(false);
+  };
+
+  return (
+    <ERPLayout>
+      <div className="space-y-6">
+        {/* 页面标题 */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Hash className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold tracking-tight">编码设置</h2>
+              <p className="text-sm text-muted-foreground">配置各类单据的自动编码规则</p>
+            </div>
+          </div>
+          <Button onClick={handleAdd}>
+            <Plus className="h-4 w-4 mr-1" />
+            新增规则
+          </Button>
+        </div>
+
+        {/* 统计卡片 */}
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">编码规则总数</p>
+              <p className="text-2xl font-bold">{codeRules.length}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">启用规则</p>
+              <p className="text-2xl font-bold text-green-600">
+                {codeRules.filter((r: any) => r.status === "active").length}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">涉及模块</p>
+              <p className="text-2xl font-bold text-primary">
+                {new Set(codeRules.map((r: any) => r.module)).size}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">今日生成</p>
+              <p className="text-2xl font-bold text-amber-600">128</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 搜索 */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="搜索规则名称、前缀、所属模块..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 数据表格 */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>规则名称</TableHead>
+                    <TableHead>前缀</TableHead>
+                    <TableHead>日期格式</TableHead>
+                    <TableHead>流水号位数</TableHead>
+                    <TableHead>当前流水号</TableHead>
+                    <TableHead>示例</TableHead>
+                    <TableHead>所属模块</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead className="w-[100px]">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredRules.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        {isLoading ? "加载中..." : "暂无数据"}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredRules.map((rule: any) => (
+                      <TableRow key={rule.id}>
+                        <TableCell className="font-medium">{rule.name}</TableCell>
+                        <TableCell className="font-mono">{rule.prefix}</TableCell>
+                        <TableCell>{rule.dateFormat || "-"}</TableCell>
+                        <TableCell>{rule.serialLength}</TableCell>
+                        <TableCell>{rule.currentSerial}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                              {rule.example}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleCopyExample(rule.example)}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{rule.module}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={rule.status === "active" ? "default" : "secondary"}>
+                            {rule.status === "active" ? "启用" : "停用"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleView(rule)}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                查看
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEdit(rule)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                编辑
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleResetSerial(rule)}>
+                                <RefreshCw className="h-4 w-4 mr-2" />
+                                重置流水号
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(rule)}
+                                className={canDelete ? "text-destructive" : "text-muted-foreground"}
+                                disabled={!canDelete}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                删除
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 新建/编辑对话框 */}
+      <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DraggableDialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingRule ? "编辑编码规则" : "新增编码规则"}</DialogTitle>
+            <DialogDescription>
+              配置单据自动编码的生成规则
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>规则名称 *</Label>
+                <Input
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="如：销售订单编码"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>编码前缀 *</Label>
+                <Input
+                  value={formData.prefix}
+                  onChange={(e) => setFormData({ ...formData, prefix: e.target.value.toUpperCase() })}
+                  placeholder="如：SO"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>日期格式</Label>
+                <Select
+                  value={formData.dateFormat}
+                  onValueChange={(v) => setFormData({ ...formData, dateFormat: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择日期格式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dateFormatOptions.map((opt: any) => (
+                      <SelectItem key={opt.value} value={opt.value || "none"}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>流水号位数</Label>
+                <Select
+                  value={formData.serialLength.toString()}
+                  onValueChange={(v) => setFormData({ ...formData, serialLength: parseInt(v) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[3, 4, 5, 6, 7, 8].map((n: any) => (
+                      <SelectItem key={n} value={n.toString()}>
+                        {n} 位
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>分隔符</Label>
+                <Select
+                  value={formData.separator}
+                  onValueChange={(v) => setFormData({ ...formData, separator: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="-">连字符 (-)</SelectItem>
+                    <SelectItem value="_">下划线 (_)</SelectItem>
+                    <SelectItem value="none">无分隔符</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>所属模块</Label>
+                <Select
+                  value={formData.module}
+                  onValueChange={(v) => setFormData({ ...formData, module: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择模块" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {moduleOptions.map((opt: any) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>状态</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(v) => setFormData({ ...formData, status: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">启用</SelectItem>
+                  <SelectItem value="inactive">停用</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>编码示例</Label>
+              <div className="p-3 bg-muted rounded-md">
+                <code className="text-sm font-mono">{generateExample()}</code>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={handleSubmit}>保存</Button>
+          </DialogFooter>
+        </DraggableDialogContent>
+      </DraggableDialog>
+
+      {/* 查看详情对话框 */}
+      <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DraggableDialogContent>
+          <DialogHeader>
+            <DialogTitle>编码规则详情</DialogTitle>
+          </DialogHeader>
+          {viewingRule && (
+            <div className="grid grid-cols-2 gap-4 py-4">
+              <div>
+                <p className="text-sm text-muted-foreground">规则名称</p>
+                <p className="font-medium">{viewingRule.name}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">编码前缀</p>
+                <p className="font-medium font-mono">{viewingRule.prefix}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">日期格式</p>
+                <p className="font-medium">{viewingRule.dateFormat || "无"}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">流水号位数</p>
+                <p className="font-medium">{viewingRule.serialLength} 位</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">当前流水号</p>
+                <p className="font-medium">{viewingRule.currentSerial}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">分隔符</p>
+                <p className="font-medium">{viewingRule.separator || "无"}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">所属模块</p>
+                <Badge variant="outline">{viewingRule.module}</Badge>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">状态</p>
+                <Badge variant={viewingRule.status === "active" ? "default" : "secondary"}>
+                  {viewingRule.status === "active" ? "启用" : "停用"}
+                </Badge>
+              </div>
+              <div className="col-span-2">
+                <p className="text-sm text-muted-foreground">编码示例</p>
+                <code className="text-sm bg-muted px-2 py-1 rounded">{viewingRule.example}</code>
+              </div>
+              <div className="col-span-2">
+                <p className="text-sm text-muted-foreground">描述</p>
+                <p className="font-medium">{viewingRule.description || "-"}</p>
+              </div>
+            </div>
+          )}
+        </DraggableDialogContent>
+      </DraggableDialog>
+    </ERPLayout>
+  );
+}

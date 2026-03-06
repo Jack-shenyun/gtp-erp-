@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `productCategory` enum('finished','semi_finished','raw_material','auxiliary','other');
