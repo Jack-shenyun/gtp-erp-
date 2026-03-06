@@ -1362,8 +1362,30 @@ export const productionRecords = mysqlTable("production_records", {
   // 首件检验字段
   firstPieceResult: mysqlEnum("firstPieceResult", ["qualified", "unqualified"]), // 首件检验结果
   firstPieceInspector: varchar("firstPieceInspector", { length: 50 }), // 检验人
+  firstPieceBasis: varchar("firstPieceBasis", { length: 100 }), // 检验依据文件编号
+  firstPieceBasisVersion: varchar("firstPieceBasisVersion", { length: 20 }), // 检验依据版本
+  // 公共补充字段（对应PDF表头）
+  specification: varchar("specification", { length: 200 }), // 型号规格
+  processType: varchar("processType", { length: 50 }), // 工序类别（常规/特殊）
+  processName: varchar("processName", { length: 100 }), // 工序名称
+  workshopName: varchar("workshopName", { length: 100 }), // 车间名称
+  productionTeam: varchar("productionTeam", { length: 50 }), // 生产班组
+  operator: varchar("operator", { length: 50 }), // 操作人
+  inspector: varchar("inspector", { length: 50 }), // 检验人/审核人
+  // 温湿度补充字段
+  cleanlinessLevel: varchar("cleanlinessLevel", { length: 50 }), // 洁净级别（如：十万级）
+  pressureDiff: decimal("pressureDiff", { precision: 6, scale: 2 }), // 压差(Pa)
+  // 材料使用补充字段
+  storageArea: varchar("storageArea", { length: 100 }), // 放置区域
+  issuedQty: decimal("issuedQty", { precision: 12, scale: 4 }), // 领用数量
+  qualifiedQty: decimal("qualifiedQty", { precision: 12, scale: 4 }), // 合格数量
+  // 工序质控点/明细数据（JSON）
+  detailItems: text("detailItems"), // JSON: 清场5项/首件检验项/质控参数明细
+  equipmentItems: text("equipmentItems"), // JSON: 设备记录
+  moldItems: text("moldItems"), // JSON: 模具记录
+  documentVersion: varchar("documentVersion", { length: 20 }), // 作业指导书版本
   status: mysqlEnum("status", ["in_progress", "completed", "abnormal"]).default("in_progress").notNull(),
-  remark: text("remark"),                      // JSON存储工序明细
+  remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1531,3 +1553,37 @@ export const outingRequests = mysqlTable("outing_requests", {
 });
 export type OutingRequest = typeof outingRequests.$inferSelect;
 export type InsertOutingRequest = typeof outingRequests.$inferInsert;
+
+
+// ==================== UDI 标签管理 ====================
+export const udiLabels = mysqlTable("udi_labels", {
+  id: int("id").autoincrement().primaryKey(),
+  labelNo: varchar("labelNo", { length: 50 }).notNull().unique(),
+  productId: int("productId"),
+  productName: varchar("productName", { length: 200 }),
+  productCode: varchar("productCode", { length: 50 }),
+  specification: varchar("specification", { length: 200 }),
+  registrationNo: varchar("registrationNo", { length: 100 }),
+  riskLevel: mysqlEnum("riskLevel", ["I", "II", "III"]),
+  udiDi: varchar("udiDi", { length: 100 }).notNull(),
+  issuer: mysqlEnum("issuer", ["GS1", "HIBC", "ICCBBA", "OTHER"]).default("GS1"),
+  batchNo: varchar("batchNo", { length: 50 }),
+  serialNo: varchar("serialNo", { length: 50 }),
+  productionDate: date("productionDate"),
+  expiryDate: date("expiryDate"),
+  carrierType: mysqlEnum("carrierType", ["datamatrix", "gs1_128", "qr_code", "rfid"]).default("datamatrix"),
+  labelTemplate: mysqlEnum("labelTemplate", ["single", "double", "box", "pallet"]).default("single"),
+  printQty: int("printQty").default(1).notNull(),
+  printedQty: int("printedQty").default(0).notNull(),
+  status: mysqlEnum("status", ["pending", "printing", "printed", "used", "recalled"]).default("pending").notNull(),
+  printDate: timestamp("printDate"),
+  printedBy: int("printedBy"),
+  nmpaSubmitted: boolean("nmpaSubmitted").default(false),
+  nmpaSubmitDate: timestamp("nmpaSubmitDate"),
+  remark: text("remark"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type UdiLabel = typeof udiLabels.$inferSelect;
+export type InsertUdiLabel = typeof udiLabels.$inferInsert;

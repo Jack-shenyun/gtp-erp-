@@ -2235,12 +2235,28 @@ export const appRouter = router({
   // ==================== 物料申请 ====================
   materialRequests: router({
     list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), department: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
-      return await getMaterialRequests(input);
+      const rows = await getMaterialRequests(input);
+      return rows.map(r => ({
+        ...r,
+        requestDate: r.requestDate ? String(r.requestDate).split('T')[0] : null,
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+        updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null,
+        approvedAt: r.approvedAt ? new Date(r.approvedAt).toISOString() : null,
+        submittedAt: (r as any).submittedAt ? new Date((r as any).submittedAt).toISOString() : null,
+      }));
     }),
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       const request = await getMaterialRequestById(input.id);
       const items = await getMaterialRequestItems(input.id);
-      return { request, items };
+      const serialized = request ? {
+        ...request,
+        requestDate: request.requestDate ? String(request.requestDate).split('T')[0] : null,
+        createdAt: request.createdAt ? new Date(request.createdAt).toISOString() : null,
+        updatedAt: request.updatedAt ? new Date(request.updatedAt).toISOString() : null,
+        approvedAt: request.approvedAt ? new Date(request.approvedAt).toISOString() : null,
+        submittedAt: (request as any).submittedAt ? new Date((request as any).submittedAt).toISOString() : null,
+      } : undefined;
+      return { request: serialized, items };
     }),
     create: protectedProcedure.input(z.object({
       requestNo: z.string(), department: z.string(), requestDate: z.string(),
@@ -3284,6 +3300,28 @@ export const appRouter = router({
       // 首件检验
       firstPieceResult: z.enum(["qualified", "unqualified"]).optional(),
       firstPieceInspector: z.string().optional(),
+      firstPieceBasis: z.string().optional(),
+      firstPieceBasisVersion: z.string().optional(),
+      // 公共补充字段
+      specification: z.string().optional(),
+      processType: z.string().optional(),
+      processName: z.string().optional(),
+      workshopName: z.string().optional(),
+      productionTeam: z.string().optional(),
+      operator: z.string().optional(),
+      inspector: z.string().optional(),
+      // 温湿度补充
+      cleanlinessLevel: z.string().optional(),
+      pressureDiff: z.string().optional(),
+      // 材料使用补充
+      storageArea: z.string().optional(),
+      issuedQty: z.string().optional(),
+      qualifiedQty: z.string().optional(),
+      // 明细JSON字段
+      detailItems: z.string().optional(),
+      equipmentItems: z.string().optional(),
+      moldItems: z.string().optional(),
+      documentVersion: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       const { recordDate, ...rest } = input;
       const id = await createProductionRecord({
@@ -3324,6 +3362,24 @@ export const appRouter = router({
         cleanResult: z.enum(["pass", "fail"]).optional(),
         firstPieceResult: z.enum(["qualified", "unqualified"]).optional(),
         firstPieceInspector: z.string().optional(),
+        firstPieceBasis: z.string().optional(),
+        firstPieceBasisVersion: z.string().optional(),
+        specification: z.string().optional(),
+        processType: z.string().optional(),
+        processName: z.string().optional(),
+        workshopName: z.string().optional(),
+        productionTeam: z.string().optional(),
+        operator: z.string().optional(),
+        inspector: z.string().optional(),
+        cleanlinessLevel: z.string().optional(),
+        pressureDiff: z.string().optional(),
+        storageArea: z.string().optional(),
+        issuedQty: z.string().optional(),
+        qualifiedQty: z.string().optional(),
+        detailItems: z.string().optional(),
+        equipmentItems: z.string().optional(),
+        moldItems: z.string().optional(),
+        documentVersion: z.string().optional(),
       }),
     })).mutation(async ({ input }) => {
       await updateProductionRecord(input.id, input.data); return { success: true };
@@ -3625,6 +3681,122 @@ export const appRouter = router({
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await deleteOutingRequest(input.id); return { success: true };
     }),
+  }),
+  // ==================== MRP 物料需求计划运算 ====================
+  mrp: router({
+    /**
+     * 对单条生产计划执行 MRP 运算
+     * 逻辑：取 BOM 用量 × 计划数量 → 减去合格库存 → 减去在途量 → 得出净需求
+     */
+    calculate: protectedProcedure
+      .input(z.object({ productionPlanId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const plan = await getProductionPlanById(input.productionPlanId);
+        if (!plan) throw new Error("生产计划不存在");
+
+        const plannedQty = parseFloat(String(plan.plannedQty)) || 0;
+        if (plannedQty <= 0) throw new Error("计划数量必须大于 0");
+
+        const bomItems = (await getBomByProductId(plan.productId)).filter(
+          (b: any) => b.status === "active"
+        );
+        if (bomItems.length === 0) {
+          return {
+            planId: plan.id, planNo: plan.planNo, productId: plan.productId,
+            productName: plan.productName, plannedQty, unit: plan.unit,
+            bomMissing: true, items: [], calculatedAt: new Date().toISOString(),
+          };
+        }
+
+        const { inventory: inventoryTable, purchaseOrders: poTable, purchaseOrderItems: poItemsTable } = await import("../drizzle/schema");
+        const { eq: deq, and: dand, inArray: dinArray, sql: dsql } = await import("drizzle-orm");
+        const materialCodes = [...new Set(bomItems.map((b: any) => b.materialCode).filter(Boolean))] as string[];
+
+        // 合格库存
+        let inventoryMap: Record<string, number> = {};
+        if (materialCodes.length > 0) {
+          const invRows = await db
+            .select({ materialCode: inventoryTable.materialCode, totalQty: dsql<number>`SUM(CAST(${inventoryTable.quantity} AS DECIMAL(20,4)))` })
+            .from(inventoryTable)
+            .where(dand(deq(inventoryTable.status, "qualified"), dinArray(inventoryTable.materialCode, materialCodes)))
+            .groupBy(inventoryTable.materialCode);
+          for (const row of invRows) if (row.materialCode) inventoryMap[row.materialCode] = Number(row.totalQty) || 0;
+        }
+
+        // 在途量（采购订单已审批/已下单/部分收货，未完全到货部分）
+        let onOrderMap: Record<string, number> = {};
+        if (materialCodes.length > 0) {
+          const onOrderRows = await db
+            .select({ materialCode: poItemsTable.materialCode, onOrderQty: dsql<number>`SUM(CAST(${poItemsTable.quantity} AS DECIMAL(20,4)) - CAST(COALESCE(${poItemsTable.receivedQty}, 0) AS DECIMAL(20,4)))` })
+            .from(poItemsTable)
+            .innerJoin(poTable, deq(poItemsTable.orderId, poTable.id))
+            .where(dand(dinArray(poTable.status, ["approved", "ordered", "partial_received"]), dinArray(poItemsTable.materialCode, materialCodes)))
+            .groupBy(poItemsTable.materialCode);
+          for (const row of onOrderRows) if (row.materialCode) onOrderMap[row.materialCode] = Math.max(0, Number(row.onOrderQty) || 0);
+        }
+
+        const today = new Date();
+        const plannedEndDate = plan.plannedEndDate ? new Date(String(plan.plannedEndDate)) : null;
+        const daysToDeadline = plannedEndDate ? Math.ceil((plannedEndDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 999;
+
+        const items = bomItems.map((b: any) => {
+          const requiredQty = parseFloat(String(b.quantity)) * plannedQty;
+          const onHandQty = inventoryMap[b.materialCode] || 0;
+          const onOrderQty = onOrderMap[b.materialCode] || 0;
+          const netRequirement = Math.max(0, requiredQty - onHandQty - onOrderQty);
+          let urgency: "high" | "medium" | "low" = "low";
+          if (netRequirement > 0) {
+            if (daysToDeadline <= 7) urgency = "high";
+            else if (daysToDeadline <= 14) urgency = "medium";
+          }
+          return {
+            bomId: b.id,
+            materialCode: b.materialCode || "-",
+            materialName: b.materialName,
+            specification: b.specification || "-",
+            unit: b.unit || "-",
+            bomQty: parseFloat(String(b.quantity)),
+            requiredQty: Math.round(requiredQty * 10000) / 10000,
+            onHandQty: Math.round(onHandQty * 10000) / 10000,
+            onOrderQty: Math.round(onOrderQty * 10000) / 10000,
+            netRequirement: Math.round(netRequirement * 10000) / 10000,
+            urgency,
+            needPurchase: netRequirement > 0,
+          };
+        });
+
+        return {
+          planId: plan.id, planNo: plan.planNo, productId: plan.productId,
+          productName: plan.productName, plannedQty, unit: plan.unit,
+          plannedStartDate: plan.plannedStartDate ? String(plan.plannedStartDate).split("T")[0] : null,
+          plannedEndDate: plan.plannedEndDate ? String(plan.plannedEndDate).split("T")[0] : null,
+          daysToDeadline, bomMissing: false,
+          totalMaterials: items.length,
+          shortfallCount: items.filter((i) => i.netRequirement > 0).length,
+          items,
+          calculatedAt: new Date().toISOString(),
+        };
+      }),
+
+    /**
+     * 批量列出所有生产计划（用于 MRP 列表页）
+     */
+    listPlans: protectedProcedure
+      .input(z.object({ status: z.string().optional(), search: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const plans = await getProductionPlans({ status: input?.status, search: input?.search, limit: 200 });
+        // 将 Date 对象序列化为字符串，避免前端渲染 [object Date]
+        return plans.map((p: any) => ({
+          ...p,
+          plannedStartDate: p.plannedStartDate ? String(p.plannedStartDate).split('T')[0] : null,
+          plannedEndDate: p.plannedEndDate ? String(p.plannedEndDate).split('T')[0] : null,
+          createdAt: p.createdAt ? new Date(p.createdAt).toISOString() : null,
+          updatedAt: p.updatedAt ? new Date(p.updatedAt).toISOString() : null,
+        }));
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

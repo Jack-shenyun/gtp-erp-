@@ -99,6 +99,10 @@ import {
   MapPin,
   Thermometer,
   Settings2,
+  Printer,
+  QrCode,
+  Upload,
+  Archive,
 } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -174,7 +178,10 @@ const menuConfig = [
       { icon: Warehouse, label: "生产入库申请", path: "/production/warehouse-entry" },
       { icon: Layers, label: "BOM物料清单", path: "/production/bom" },
       { icon: GitBranch, label: "MRP物料计划", path: "/production/mrp" },
-      { icon: Tags, label: "UDI标签管理", path: "/production/udi" },
+      { icon: Archive, label: "UDI档案", path: "/production/udi/archive" },
+      { icon: QrCode, label: "标签设计器", path: "/production/udi/designer" },
+      { icon: Printer, label: "标签打印", path: "/production/udi/print" },
+      { icon: Upload, label: "UDI上报", path: "/production/udi/report" },
       { icon: Wrench, label: "设备管理", path: "/production/equipment" },
       { icon: Thermometer, label: "生产环境管理", path: "/production/environment" },
       { icon: Settings2, label: "生产工序管理", path: "/production/process" },
@@ -201,6 +208,7 @@ const menuConfig = [
       { icon: LayoutDashboard, label: "采购计划", path: "/purchase/plan" },
       { icon: UserCheck, label: "供应商管理", path: "/purchase/suppliers" },
       { icon: FileInput, label: "采购执行", path: "/purchase/orders" },
+      { icon: ClipboardList, label: "采购申请", path: "/purchase/requests" },
       { icon: CreditCard, label: "财务协同", path: "/purchase/finance" },
     ],
   },

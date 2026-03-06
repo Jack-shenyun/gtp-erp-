@@ -38,6 +38,10 @@ import ProjectsPage from "./pages/rd/Projects";
 // 生产部模块
 import ProductionOrdersPage from "./pages/production/Orders";
 import UDIPage from "./pages/production/UDI";
+import UDIArchivePage from "./pages/udi/UDIArchive";
+import LabelDesignerPage from "./pages/udi/LabelDesigner";
+import LabelPrintPage from "./pages/udi/LabelPrint";
+import UDIReportPage from "./pages/udi/UDIReport";
 import EquipmentPage from "./pages/production/Equipment";
 import BOMPage from "./pages/production/BOM";
 import MRPPage from "./pages/production/MRP";
@@ -63,6 +67,7 @@ import SuppliersPage from "./pages/purchase/Suppliers";
 import PurchaseOrdersPage from "./pages/purchase/Orders";
 import PurchaseFinancePage from "./pages/purchase/Finance";
 import PurchasePlanBoardPage from "./pages/purchase/PurchasePlanBoard";
+import MaterialRequestsPage from "./pages/purchase/MaterialRequests";
 
 // 仓库管理模块
 import InboundPage from "./pages/warehouse/Inbound";
@@ -137,6 +142,10 @@ function Router() {
       <Route path="/production/bom" component={BOMPage} />
       <Route path="/production/mrp" component={MRPPage} />
       <Route path="/production/udi" component={UDIPage} />
+      <Route path="/production/udi/archive" component={UDIArchivePage} />
+      <Route path="/production/udi/designer" component={LabelDesignerPage} />
+      <Route path="/production/udi/print" component={LabelPrintPage} />
+      <Route path="/production/udi/report" component={UDIReportPage} />
       <Route path="/production/equipment" component={EquipmentPage} />
       <Route path="/production/environment" component={EnvironmentPage} />
       <Route path="/production/process" component={ProcessPage} />
@@ -154,6 +163,7 @@ function Router() {
       <Route path="/purchase/orders" component={PurchaseOrdersPage} />
       <Route path="/purchase/finance" component={PurchaseFinancePage} />
       <Route path="/purchase/plan" component={PurchasePlanBoardPage} />
+      <Route path="/purchase/requests" component={MaterialRequestsPage} />
 
       {/* 仓库管理 */}
       <Route path="/warehouse/warehouses" component={WarehousesPage} />
