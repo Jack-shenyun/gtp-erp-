@@ -617,7 +617,8 @@ function CreateBOMDialog({
 
   // 状态
   const [selectedProductId, setSelectedProductId] = useState<string>("");
-  const [productComboOpen, setProductComboOpen] = useState(false);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productPickerSearch, setProductPickerSearch] = useState("");
   const [version, setVersion] = useState("V1.0");
   const [level2Items, setLevel2Items] = useState<BomLevel2Item[]>([]);
   const [level3DialogOpen, setLevel3DialogOpen] = useState(false);
@@ -771,55 +772,136 @@ function CreateBOMDialog({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>选择成品产品 *</Label>
-                  <Popover open={productComboOpen} onOpenChange={setProductComboOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={productComboOpen}
-                        className="mt-1 w-full justify-between font-normal"
-                      >
-                        {selectedProductId
-                          ? (() => {
-                              const p = finishedProducts.find((p: any) => String(p.id) === selectedProductId);
-                              return p ? `${p.code} - ${p.name}` : "请选择产品...";
-                            })()
-                          : "请选择产品..."}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[400px] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="搜索产品编码、名称、规格..." />
-                        <CommandList>
-                          <CommandEmpty>未找到匹配的产品</CommandEmpty>
-                          <CommandGroup>
-                            {finishedProducts.map((p: any) => (
-                              <CommandItem
-                                key={p.id}
-                                value={`${p.code} ${p.name} ${p.specification || ""}`}
-                                onSelect={() => {
-                                  setSelectedProductId(String(p.id));
-                                  setProductComboOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    selectedProductId === String(p.id) ? "opacity-100" : "opacity-0"
-                                  )}
-                                />
-                                <div className="flex flex-col">
-                                  <span className="font-mono text-sm font-medium">{p.code}</span>
-                                  <span className="text-xs text-muted-foreground">{p.name}{p.specification ? ` · ${p.specification}` : ""}</span>
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <Button
+                    variant="outline"
+                    className="mt-1 w-full justify-between font-normal"
+                    onClick={() => setProductPickerOpen(true)}
+                  >
+                    {selectedProductId
+                      ? (() => {
+                          const p = finishedProducts.find((p: any) => String(p.id) === selectedProductId);
+                          return p ? (
+                            <span className="flex items-center gap-2">
+                              <Check className="h-4 w-4 text-green-600" />
+                              <span className="font-mono">{p.code}</span>
+                              <span className="text-muted-foreground">{p.name}</span>
+                            </span>
+                          ) : "请选择产品...";
+                        })()
+                      : <span className="text-muted-foreground">点击选择产品...</span>}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+
+                  {/* 产品选择弹窗 */}
+                  <DraggableDialog open={productPickerOpen} onOpenChange={setProductPickerOpen}>
+                    <DraggableDialogContent className="max-w-3xl">
+                      <DialogHeader>
+                        <DialogTitle>选择产品</DialogTitle>
+                      </DialogHeader>
+                      <div className="flex flex-col gap-3">
+                        {/* 搜索框 */}
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            className="pl-9"
+                            placeholder="搜索产品编码、名称、规格型号..."
+                            value={productPickerSearch}
+                            onChange={(e) => setProductPickerSearch(e.target.value)}
+                          />
+                        </div>
+                        {/* 表格 */}
+                        <div className="border rounded-lg overflow-hidden">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-muted/50">
+                                <TableHead>产品编码</TableHead>
+                                <TableHead>产品名称</TableHead>
+                                <TableHead>规格型号</TableHead>
+                                <TableHead>单位</TableHead>
+                                <TableHead>产品属性</TableHead>
+                                <TableHead className="text-right">操作</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {finishedProducts
+                                .filter((p: any) => {
+                                  if (!productPickerSearch.trim()) return true;
+                                  const q = productPickerSearch.toLowerCase();
+                                  return (
+                                    p.code?.toLowerCase().includes(q) ||
+                                    p.name?.toLowerCase().includes(q) ||
+                                    p.specification?.toLowerCase().includes(q)
+                                  );
+                                })
+                                .map((p: any) => (
+                                  <TableRow
+                                    key={p.id}
+                                    className={cn(
+                                      "cursor-pointer hover:bg-muted/50 transition-colors",
+                                      selectedProductId === String(p.id) && "bg-blue-50"
+                                    )}
+                                    onClick={() => {
+                                      setSelectedProductId(String(p.id));
+                                      setProductPickerOpen(false);
+                                      setProductPickerSearch("");
+                                    }}
+                                  >
+                                    <TableCell className="font-mono font-medium">{p.code}</TableCell>
+                                    <TableCell className="font-medium">{p.name}</TableCell>
+                                    <TableCell className="text-muted-foreground">{p.specification || "-"}</TableCell>
+                                    <TableCell>{p.unit || "-"}</TableCell>
+                                    <TableCell>
+                                      <Badge variant="outline" className="text-xs">
+                                        {p.category || "成品"}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {selectedProductId === String(p.id) ? (
+                                        <Check className="h-5 w-5 text-green-600 ml-auto" />
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedProductId(String(p.id));
+                                            setProductPickerOpen(false);
+                                            setProductPickerSearch("");
+                                          }}
+                                        >
+                                          选择
+                                        </Button>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              {finishedProducts.filter((p: any) => {
+                                if (!productPickerSearch.trim()) return true;
+                                const q = productPickerSearch.toLowerCase();
+                                return (
+                                  p.code?.toLowerCase().includes(q) ||
+                                  p.name?.toLowerCase().includes(q) ||
+                                  p.specification?.toLowerCase().includes(q)
+                                );
+                              }).length === 0 && (
+                                <TableRow>
+                                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                                    未找到匹配的产品
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        <div className="flex justify-end">
+                          <Button variant="outline" onClick={() => { setProductPickerOpen(false); setProductPickerSearch(""); }}>
+                            取消
+                          </Button>
+                        </div>
+                      </div>
+                    </DraggableDialogContent>
+                  </DraggableDialog>
                 </div>
                 <div>
                   <Label>BOM 版本 *</Label>
