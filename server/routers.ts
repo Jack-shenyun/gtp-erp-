@@ -52,7 +52,7 @@ import {
   getAccountsPayable, getAccountsPayableById, createAccountsPayable, updateAccountsPayable, deleteAccountsPayable,
   getDealerQualifications, getDealerQualificationById, createDealerQualification, updateDealerQualification, deleteDealerQualification,
   getEquipment, getEquipmentById, createEquipment, updateEquipment, deleteEquipment,
-  getProductionPlans, getProductionPlanById, createProductionPlan, updateProductionPlan, deleteProductionPlan,
+  getProductionPlans, getProductionPlanById, createProductionPlan, updateProductionPlan, deleteProductionPlan, autoGenerateProductionPlans,
   getMaterialRequisitionOrders, getMaterialRequisitionOrderById, createMaterialRequisitionOrder, updateMaterialRequisitionOrder, deleteMaterialRequisitionOrder,
   getProductionRecords, getProductionRecordById, createProductionRecord, updateProductionRecord, deleteProductionRecord,
   getProductionRoutingCards, getProductionRoutingCardById, createProductionRoutingCard, updateProductionRoutingCard, deleteProductionRoutingCard,
@@ -91,7 +91,10 @@ function parseDepartments(raw: unknown): string[] {
 }
 
 function canViewAllSalesData(user: any): boolean {
-  return user?.role === "admin" || String(user?.name ?? "").trim() === "刘源";
+  // 管理员或部门负责人可查看全部销售数据
+  const role = String(user?.role ?? "");
+  const position = String(user?.position ?? "").trim();
+  return role === "admin" || position === "部门负责人" || position === "经理" || position === "总监";
 }
 
 function isSalesDepartmentUser(user: any): boolean {
@@ -1068,6 +1071,18 @@ export const appRouter = router({
           await syncOneReceivableFromSalesOrder(input.id, ctx.user?.id);
         } catch {
           // 应收联动失败不阻塞审批
+        }
+        // 审批通过后，账期支付订单自动检查库存并生成生产计划
+        if (nextApprovalState?.stage === "none") {
+          try {
+            const [approvedOrder] = await db.select().from(salesOrdersTable).where(eq(salesOrdersTable.id, input.id)).limit(1);
+            const paymentCond = String(approvedOrder?.paymentCondition || "").toLowerCase();
+            if (paymentCond.includes("账期") || paymentCond.includes("credit") || paymentCond.includes("net")) {
+              await autoGenerateProductionPlans(input.id, ctx.user?.id);
+            }
+          } catch {
+            // 生产计划联动失败不阻塞审批
+          }
         }
         return { success: true };
       }),
@@ -2692,13 +2707,31 @@ export const appRouter = router({
         receiptDate: z.string().optional(), paymentMethod: z.string().optional(),
         bankAccountId: z.number().optional(), remark: z.string().optional(),
       }),
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
       const { receiptDate, dueDate, ...rest } = input.data;
       await updateAccountsReceivable(input.id, {
         ...rest,
         receiptDate: receiptDate ? toDateOnly(receiptDate) : undefined,
         dueDate: dueDate ? toDateOnly(dueDate) : undefined,
       });
+      // 财务确认收款后，预付款订单自动检查库存并生成生产计划
+      if (input.data.paidAmount && Number(input.data.paidAmount) > 0) {
+        try {
+          const db = await getDb();
+          if (db) {
+            const [receivable] = await db.select().from(accountsReceivableTable).where(eq(accountsReceivableTable.id, input.id)).limit(1);
+            if (receivable?.salesOrderId) {
+              const [order] = await db.select().from(salesOrdersTable).where(eq(salesOrdersTable.id, receivable.salesOrderId)).limit(1);
+              const paymentCond = String(order?.paymentCondition || "").toLowerCase();
+              if (paymentCond.includes("预付") || paymentCond.includes("prepay") || paymentCond.includes("advance")) {
+                await autoGenerateProductionPlans(receivable.salesOrderId, ctx.user?.id);
+              }
+            }
+          }
+        } catch {
+          // 生产计划联动失败不阻塞收款确认
+        }
+      }
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {

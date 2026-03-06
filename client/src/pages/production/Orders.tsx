@@ -2,8 +2,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
-import ProductMultiSelect, { SelectedProduct } from "@/components/ProductMultiSelect";
-import { Cog, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Package, Play, CheckCircle } from "lucide-react";
+import { Cog, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Play, CheckCircle } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +64,28 @@ const statusMap: Record<string, { label: string; variant: "outline" | "secondary
   cancelled: { label: "已取消", variant: "destructive", color: "text-red-600" },
 };
 
+/**
+ * 生成统一格式批次号: YYYYMMDDNN
+ * 例如: 2026031101, 2026031102
+ */
+function generateBatchNo(existingOrders: any[]): string {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  // 查找当天已有的批次号，计算序号
+  const todayBatches = existingOrders
+    .map((o: any) => o.batchNo || "")
+    .filter((b: string) => b.startsWith(dateStr));
+  let seq = 1;
+  for (const b of todayBatches) {
+    const suffix = b.replace(dateStr, "");
+    const num = parseInt(suffix, 10);
+    if (!isNaN(num) && num >= seq) {
+      seq = num + 1;
+    }
+  }
+  return `${dateStr}${String(seq).padStart(2, "0")}`;
+}
+
 export default function ProductionOrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -79,6 +100,7 @@ export default function ProductionOrdersPage() {
     { search: searchTerm || undefined, status: statusFilter !== "all" ? statusFilter : undefined }
   );
   const { data: productsData = [] } = trpc.products.list.useQuery();
+  const { data: productionPlansData = [] } = trpc.productionPlans.list.useQuery();
   const createMutation = trpc.productionOrders.create.useMutation({ onSuccess: () => { refetch(); toast.success("生产单已创建"); setFormDialogOpen(false); } });
   const updateMutation = trpc.productionOrders.update.useMutation({ onSuccess: () => { refetch(); toast.success("生产单已更新"); setFormDialogOpen(false); setViewDialogOpen(false); } });
   const deleteMutation = trpc.productionOrders.delete.useMutation({ onSuccess: () => { refetch(); toast.success("生产单已删除"); } });
@@ -93,7 +115,13 @@ export default function ProductionOrdersPage() {
     };
   });
 
+  // 可选的生产计划（未完成、未取消的）
+  const availablePlans = (productionPlansData as any[]).filter(
+    (p: any) => p.status !== "completed" && p.status !== "cancelled"
+  );
+
   const [formData, setFormData] = useState({
+    planId: 0, // 关联的生产计划 ID
     productId: 0,
     batchNo: "",
     plannedQty: "",
@@ -107,9 +135,11 @@ export default function ProductionOrdersPage() {
   const handleAdd = () => {
     setIsEditing(false);
     setSelectedRecord(null);
+    const batchNo = generateBatchNo(ordersRaw as any[]);
     setFormData({
+      planId: 0,
       productId: 0,
-      batchNo: `B${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}${String(new Date().getDate()).padStart(2, "0")}`,
+      batchNo,
       plannedQty: "",
       unit: "",
       plannedStartDate: new Date().toISOString().split("T")[0],
@@ -124,6 +154,7 @@ export default function ProductionOrdersPage() {
     setIsEditing(true);
     setSelectedRecord(record);
     setFormData({
+      planId: 0,
       productId: record.productId,
       batchNo: record.batchNo || "",
       plannedQty: record.plannedQty,
@@ -149,9 +180,26 @@ export default function ProductionOrdersPage() {
     deleteMutation.mutate({ id: record.id });
   };
 
+  // 选择生产计划后自动带入产品信息
+  const handlePlanChange = (planId: string) => {
+    const plan = availablePlans.find((p: any) => p.id === Number(planId));
+    if (plan) {
+      const product = (productsData as any[]).find((p: any) => p.id === plan.productId);
+      setFormData({
+        ...formData,
+        planId: plan.id,
+        productId: plan.productId,
+        plannedQty: plan.plannedQty || "",
+        unit: plan.unit || product?.unit || "",
+        plannedEndDate: plan.plannedEndDate ? String(plan.plannedEndDate).split("T")[0] : "",
+        remark: plan.salesOrderNo ? `关联销售订单: ${plan.salesOrderNo}` : formData.remark,
+      });
+    }
+  };
+
   const handleSubmit = () => {
     if (!formData.productId || !formData.plannedQty) {
-      toast.error("请选择产品并填写计划数量");
+      toast.error("请选择生产计划或产品并填写计划数量");
       return;
     }
 
@@ -388,11 +436,41 @@ export default function ProductionOrdersPage() {
               <div>
                 <h3 className="text-sm font-medium mb-3">基本信息</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* 关联生产计划（新建时显示） */}
+                  {!isEditing && (
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>关联生产计划（选择后自动带入产品信息）</Label>
+                      <Select
+                        value={formData.planId ? String(formData.planId) : ""}
+                        onValueChange={handlePlanChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择生产计划..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availablePlans.map((plan: any) => (
+                            <SelectItem key={plan.id} value={String(plan.id)}>
+                              {plan.planNo} - {plan.productName || "未知产品"} ({plan.plannedQty} {plan.unit})
+                              {plan.salesOrderNo ? ` [${plan.salesOrderNo}]` : " [内部计划]"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label>产品 *</Label>
                     <Select
                       value={formData.productId ? String(formData.productId) : ""}
-                      onValueChange={(v) => setFormData({ ...formData, productId: Number(v) })}
+                      onValueChange={(v) => {
+                        const product = (productsData as any[]).find((p: any) => p.id === Number(v));
+                        setFormData({
+                          ...formData,
+                          productId: Number(v),
+                          unit: product?.unit || formData.unit,
+                        });
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="选择产品" />
@@ -411,8 +489,9 @@ export default function ProductionOrdersPage() {
                     <Input
                       value={formData.batchNo}
                       onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })}
-                      placeholder="如: B20260201"
+                      placeholder="格式: 2026031101"
                     />
+                    <p className="text-xs text-muted-foreground">统一格式: YYYYMMDDNN</p>
                   </div>
                   <div className="space-y-2">
                     <Label>计划数量 *</Label>

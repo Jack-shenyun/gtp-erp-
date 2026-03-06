@@ -4209,6 +4209,85 @@ export async function updateProductionPlan(id: number, data: Partial<InsertProdu
   if (!db) throw new Error("Database not available");
   await db.update(productionPlans).set(data).where(eq(productionPlans.id, id));
 }
+/**
+ * 自动检查库存并生成生产计划
+ * 当销售订单审批通过（账期支付）或财务确认预付款后调用
+ * 遍历订单产品明细，库存不足的自动生成待排产计划
+ */
+export async function autoGenerateProductionPlans(salesOrderId: number, createdBy?: number) {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    // 获取销售订单信息
+    const [order] = await db.select().from(salesOrders).where(eq(salesOrders.id, salesOrderId)).limit(1);
+    if (!order) return;
+    // 获取订单产品明细
+    const items = await db
+      .select({
+        productId: salesOrderItems.productId,
+        quantity: salesOrderItems.quantity,
+        unit: salesOrderItems.unit,
+      })
+      .from(salesOrderItems)
+      .where(eq(salesOrderItems.orderId, salesOrderId));
+    if (!items.length) return;
+
+    for (const item of items) {
+      const requiredQty = Number(item.quantity) || 0;
+      if (requiredQty <= 0) continue;
+
+      // 查询该产品的总库存（合格品）
+      const stockRows = await db
+        .select({ total: sql<string>`COALESCE(SUM(${inventory.quantity}), 0)` })
+        .from(inventory)
+        .where(and(
+          eq(inventory.productId, item.productId),
+          eq(inventory.status, "qualified")
+        ));
+      const stockQty = Number(stockRows[0]?.total) || 0;
+
+      // 库存不足，生成生产计划
+      if (stockQty < requiredQty) {
+        const shortfall = requiredQty - stockQty;
+        // 检查是否已有该订单+产品的生产计划
+        const existing = await db
+          .select({ id: productionPlans.id })
+          .from(productionPlans)
+          .where(and(
+            eq(productionPlans.salesOrderId, salesOrderId),
+            eq(productionPlans.productId, item.productId),
+            eq(productionPlans.status, "pending")
+          ))
+          .limit(1);
+        if (existing.length > 0) continue; // 已有待排产计划，跳过
+
+        // 获取产品信息
+        const [product] = await db.select().from(products).where(eq(products.id, item.productId)).limit(1);
+        const now = new Date();
+        const planNo = `PP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(Date.now()).slice(-4)}`;
+
+        await db.insert(productionPlans).values({
+          planNo,
+          planType: "sales_driven",
+          salesOrderId,
+          salesOrderNo: order.orderNo,
+          productId: item.productId,
+          productName: product?.name || `产品#${item.productId}`,
+          plannedQty: String(shortfall),
+          unit: item.unit || product?.unit || "件",
+          plannedStartDate: now.toISOString().split("T")[0],
+          plannedEndDate: order.deliveryDate || undefined,
+          priority: "normal",
+          status: "pending",
+          createdBy,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[autoGenerateProductionPlans] error:", e);
+  }
+}
+
 export async function deleteProductionPlan(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

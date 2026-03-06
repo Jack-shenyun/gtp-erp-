@@ -890,42 +890,34 @@ export default function SalesOrdersPage() {
         </div>
 
         {/* 统计卡片 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-start">
-          <Card><CardContent className="p-2.5 space-y-1.5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-stretch">
+          <Card className="flex"><CardContent className="p-2.5 space-y-1.5 flex flex-col justify-center">
             <div className="text-xs text-muted-foreground">订单总数</div>
             <div className="text-2xl font-bold leading-none">{stats.total}</div>
           </CardContent></Card>
-          <Card><CardContent className="p-2.5 space-y-1.5">
+          <Card className="flex"><CardContent className="p-2.5 space-y-1.5 flex flex-col justify-center">
             <div className="text-xs text-muted-foreground">订单金额（多币种汇总）</div>
             <div className="text-2xl leading-none font-bold text-green-600">
               ¥{(stats.totalAmount / 10000).toFixed(1)}万
               <span className="text-[11px] font-medium text-muted-foreground ml-1 align-baseline">(本位币)</span>
             </div>
-            <div className="border-t border-dashed" />
-            <div className="space-y-0.5">
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
               {currencySummary.length === 0 ? (
-                <div className="text-[11px] text-muted-foreground">-</div>
+                <span className="text-[11px] text-muted-foreground">-</span>
               ) : (
                 currencySummary.map(([currency, amount], index) => (
-                    <div key={`${currency}-${index}`} className="text-[11px] leading-tight flex items-center justify-between">
-                      <span className="font-medium">{currency}</span>
-                      <span className="font-medium">
-                        {getCurrencySymbol(currency)}
-                        {Number(amount).toLocaleString("zh-CN", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                  ))
+                  <span key={`${currency}-${index}`} className="text-[11px] leading-tight font-medium text-muted-foreground">
+                    {currency} {getCurrencySymbol(currency)}{Number(amount).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                ))
               )}
             </div>
           </CardContent></Card>
-          <Card><CardContent className="p-2.5 space-y-1.5">
+          <Card className="flex"><CardContent className="p-2.5 space-y-1.5 flex flex-col justify-center">
             <div className="text-xs text-muted-foreground">待处理</div>
             <div className="text-2xl font-bold leading-none text-amber-600">{stats.pending}</div>
           </CardContent></Card>
-          <Card><CardContent className="p-2.5 space-y-1.5">
+          <Card className="flex"><CardContent className="p-2.5 space-y-1.5 flex flex-col justify-center">
             <div className="text-xs text-muted-foreground">已完成</div>
             <div className="text-2xl font-bold leading-none text-blue-600">{stats.completed}</div>
           </CardContent></Card>

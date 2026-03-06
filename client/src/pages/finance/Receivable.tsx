@@ -873,7 +873,17 @@ export default function ReceivablePage() {
     const query = params.toString();
     window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, [displayReceivables, hasHandledFocusParam, isSalesCollaboration]);
-  const filteredReceivables = displayReceivables;
+  const [statusFilter, setStatusFilter] = useState<string>("active");
+  const filteredReceivables = useMemo(() => {
+    if (statusFilter === "all") return displayReceivables;
+    if (statusFilter === "active") {
+      return displayReceivables.filter((r: any) => {
+        const s = normalizeStatus(r.status);
+        return s !== "received" && s !== "paid";
+      });
+    }
+    return displayReceivables.filter((r: any) => normalizeStatus(r.status) === statusFilter);
+  }, [displayReceivables, statusFilter]);
 
   const totalAmount = displayReceivables.reduce((sum: number, r: any) => sum + getReceivableAmountBase(r), 0);
   const receivedAmount = displayReceivables.reduce((sum: number, r: any) => sum + getReceivedAmountBase(r), 0);
@@ -1137,21 +1147,35 @@ export default function ReceivablePage() {
         {/* 业务模式 */}
         <Card>
           <CardContent className="p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant={bizMode === "cash" ? "default" : "outline"}
-                onClick={() => setBizMode("cash")}
-                size="sm"
-              >
-                现款应收（{cashRows.length}）
-              </Button>
-              <Button
-                variant={bizMode === "account" ? "default" : "outline"}
-                onClick={() => setBizMode("account")}
-                size="sm"
-              >
-                账期对账（{accountRows.length}）
-              </Button>
+            <div className="flex flex-wrap items-center gap-2 justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={bizMode === "cash" ? "default" : "outline"}
+                  onClick={() => setBizMode("cash")}
+                  size="sm"
+                >
+                  现款应收（{cashRows.length}）
+                </Button>
+                <Button
+                  variant={bizMode === "account" ? "default" : "outline"}
+                  onClick={() => setBizMode("account")}
+                  size="sm"
+                >
+                  账期对账（{accountRows.length}）
+                </Button>
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="状态筛选" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">待处理</SelectItem>
+                  <SelectItem value="pending">待收款</SelectItem>
+                  <SelectItem value="partial">部分收款</SelectItem>
+                  <SelectItem value="overdue">已逾期</SelectItem>
+                  <SelectItem value="all">全部</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-3 grid-cols-1 md:grid-cols-3 mt-4">
               {bizMode === "cash" ? (
