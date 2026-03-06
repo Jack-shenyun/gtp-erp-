@@ -1696,6 +1696,96 @@ export const appRouter = router({
         await deleteBomItem(input.id);
         return { success: true };
       }),
+
+    // 按产品批量删除所有 BOM 条目
+    deleteByProductId: protectedProcedure
+      .input(z.object({ productId: z.number() }))
+      .mutation(async ({ input }) => {
+        const items = await getBomByProductId(input.productId);
+        for (const item of items) {
+          await deleteBomItem(item.id);
+        }
+        return { success: true, deletedCount: items.length };
+      }),
+
+    // 替换产品 BOM（先删除全部，再批量创建），用于编辑功能
+    replaceByProductId: protectedProcedure
+      .input(z.object({
+        productId: z.number(),
+        version: z.string(),
+        bomCode: z.string().optional(),
+        effectiveDate: z.string().optional(),
+        items: z.array(z.object({
+          level: z.number(),
+          materialCode: z.string(),
+          materialName: z.string(),
+          specification: z.string().optional(),
+          quantity: z.string(),
+          unit: z.string().optional(),
+          unitPrice: z.string().optional(),
+          remark: z.string().optional(),
+          children: z.array(z.object({
+            level: z.number(),
+            materialCode: z.string(),
+            materialName: z.string(),
+            specification: z.string().optional(),
+            quantity: z.string(),
+            unit: z.string().optional(),
+            unitPrice: z.string().optional(),
+            remark: z.string().optional(),
+          })).optional(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        const { productId, version, bomCode, effectiveDate, items } = input;
+        // 先删除该产品所有 BOM 条目
+        const existing = await getBomByProductId(productId);
+        for (const item of existing) {
+          await deleteBomItem(item.id);
+        }
+        // 再批量创建
+        const createdIds: number[] = [];
+        for (const item of items) {
+          const parentBomId = await createBomItem({
+            productId,
+            level: item.level,
+            materialCode: item.materialCode,
+            materialName: item.materialName,
+            specification: item.specification,
+            quantity: item.quantity,
+            unit: item.unit,
+            unitPrice: item.unitPrice,
+            version,
+            bomCode: bomCode || null,
+            effectiveDate: effectiveDate ? (new Date(effectiveDate) as any) : null,
+            remark: item.remark,
+            status: "active",
+          });
+          createdIds.push(parentBomId);
+          if (item.children && item.children.length > 0) {
+            for (const child of item.children) {
+              const childId = await createBomItem({
+                productId,
+                parentId: parentBomId,
+                level: child.level,
+                materialCode: child.materialCode,
+                materialName: child.materialName,
+                specification: child.specification,
+                quantity: child.quantity,
+                unit: child.unit,
+                unitPrice: child.unitPrice,
+                version,
+                bomCode: bomCode || null,
+                effectiveDate: effectiveDate ? (new Date(effectiveDate) as any) : null,
+                remark: child.remark,
+                status: "active",
+              });
+              createdIds.push(childId);
+            }
+          }
+        }
+        return { success: true, createdIds };
+      }),
   }),
 
   // ==================== 仓库管理 ====================

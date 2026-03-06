@@ -37,9 +37,32 @@ const statusMap: Record<string, { label: string; variant: "outline" | "default" 
 
 const priorityMap: Record<string, { label: string; color: string }> = {
   low:    { label: "低",   color: "text-muted-foreground" },
-  normal: { label: "普通", color: "text-blue-600" },
+  normal: { label: "普通", color: "text-green-600" },
   high:   { label: "高",   color: "text-orange-500" },
-  urgent: { label: "紧急", color: "text-red-600 font-bold" },
+  urgent: { label: "紧急", color: "text-yellow-500 font-bold" },
+  critical: { label: "加急", color: "text-red-600 font-bold" },
+};
+
+// 动态优先级判定：根据灭菌需求和剩余交期天数计算
+const calcDynamicPriority = (plan: any): string => {
+  if (!plan.plannedEndDate) return plan.priority || "normal";
+  const due = new Date(String(plan.plannedEndDate));
+  due.setMinutes(due.getMinutes() + due.getTimezoneOffset());
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysLeft = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const needsSterilization = Boolean(plan.productIsSterilized);
+  if (needsSterilization) {
+    if (daysLeft <= 10) return "critical";
+    if (daysLeft <= 25) return "urgent";
+    if (daysLeft > 45) return "normal";
+    return "high";
+  } else {
+    if (daysLeft <= 3) return "critical";
+    if (daysLeft <= 5) return "urgent";
+    if (daysLeft > 10) return "normal";
+    return "high";
+  }
 };
 
 const planTypeMap: Record<string, string> = {
@@ -92,6 +115,8 @@ export default function ProductionPlanBoardPage() {
   });
 
   const filteredPlans = (plans as any[]).filter((p) => {
+    // 只显示生产来源的产品（排除采购来源）
+    if (p.productSourceType === "purchase") return false;
     const matchSearch = !searchTerm ||
       String(p.planNo ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       String(p.productName ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -223,10 +248,10 @@ export default function ProductionPlanBoardPage() {
     }
   };
 
-  const pendingCount = (plans as any[]).filter((p) => p.status === "pending").length;
-  const inProgressCount = (plans as any[]).filter((p) => p.status === "in_progress").length;
-  const completedCount = (plans as any[]).filter((p) => p.status === "completed").length;
-  const urgentCount = (plans as any[]).filter((p) => p.priority === "urgent" && p.status !== "completed").length;
+  const pendingCount = filteredPlans.filter((p) => p.status === "pending").length;
+  const inProgressCount = filteredPlans.filter((p) => p.status === "in_progress").length;
+  const completedCount = filteredPlans.filter((p) => p.status === "completed").length;
+  const urgentCount = filteredPlans.filter((p) => { const dp = calcDynamicPriority(p); return (dp === "urgent" || dp === "critical") && p.status !== "completed"; }).length;
 
   const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
 
@@ -338,6 +363,7 @@ export default function ProductionPlanBoardPage() {
                   <TableHead className="text-center font-bold">计划编号</TableHead>
                   <TableHead className="text-center font-bold">类型</TableHead>
                   <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="text-center font-bold">规格型号</TableHead>
                   <TableHead className="text-center font-bold">关联销售单</TableHead>
                   <TableHead className="text-center font-bold">计划数量</TableHead>
                   <TableHead className="text-center font-bold">优先级</TableHead>
@@ -348,9 +374,9 @@ export default function ProductionPlanBoardPage() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
                 ) : filteredPlans.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">暂无生产计划</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">暂无生产计划</TableCell></TableRow>
                 ) : filteredPlans.map((plan: any) => (
                   <TableRow key={plan.id}>
                     <TableCell className="text-center font-medium">{plan.planNo}</TableCell>
@@ -358,14 +384,13 @@ export default function ProductionPlanBoardPage() {
                       <Badge variant="outline">{planTypeMap[plan.planType] || plan.planType}</Badge>
                     </TableCell>
                     <TableCell className="text-center">{plan.productName || `产品#${plan.productId}`}</TableCell>
+                    <TableCell className="text-center text-muted-foreground text-xs">{(plan as any).productSpecification || "-"}</TableCell>
                     <TableCell className="text-center text-muted-foreground">{plan.salesOrderNo || "-"}</TableCell>
                     <TableCell className="text-center">{plan.plannedQty} {plan.unit}</TableCell>
                     <TableCell className="text-center">
-                      <span className={priorityMap[plan.priority]?.color || ""}>
-                        {priorityMap[plan.priority]?.label || plan.priority}
-                      </span>
+                      {(() => { const dp = calcDynamicPriority(plan); return <span className={priorityMap[dp]?.color || ""}>{priorityMap[dp]?.label || dp}</span>; })()}
                     </TableCell>
-                    <TableCell className="text-center">{plan.plannedEndDate ? String(plan.plannedEndDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell className="text-center">{plan.plannedEndDate ? (() => { const d = new Date(plan.plannedEndDate); d.setMinutes(d.getMinutes() + d.getTimezoneOffset()); return d.toISOString().split("T")[0]; })() : "-"}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant={statusMap[plan.status]?.variant || "outline"} className={getStatusSemanticClass(plan.status, statusMap[plan.status]?.label)}>
                         {statusMap[plan.status]?.label || plan.status}
@@ -609,17 +634,32 @@ export default function ProductionPlanBoardPage() {
 
         <div className="space-y-6">
           <div>
-            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">产品信息</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
               <div>
                 <FieldRow label="产品名称">{viewingPlan.productName || `-`}</FieldRow>
+                <FieldRow label="产品编码">{(viewingPlan as any).productCode || "-"}</FieldRow>
+                <FieldRow label="规格型号">{(viewingPlan as any).productSpecification || "-"}</FieldRow>
+                <FieldRow label="计量单位">{(viewingPlan as any).productUnit || viewingPlan.unit || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="生产厂家">{(viewingPlan as any).productManufacturer || "-"}</FieldRow>
+                <FieldRow label="注册证号">{(viewingPlan as any).productRegistrationNo || "-"}</FieldRow>
+                <FieldRow label="产品分类">{{ finished: "成品", semi_finished: "半成品", raw_material: "原材料", auxiliary: "辅料", other: "其他" }[(viewingPlan as any).productCategory as string] || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">生产信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
                 <FieldRow label="计划数量">{viewingPlan.plannedQty} {viewingPlan.unit}</FieldRow>
-                <FieldRow label="计划开始">{viewingPlan.plannedStartDate ? String(viewingPlan.plannedStartDate).split("T")[0] : "-"}</FieldRow>
+                <FieldRow label="计划开始">{viewingPlan.plannedStartDate ? (() => { const d = new Date(String(viewingPlan.plannedStartDate)); d.setMinutes(d.getMinutes() + d.getTimezoneOffset()); return d.toISOString().split("T")[0]; })() : "-"}</FieldRow>
+                <FieldRow label="计划交期">{viewingPlan.plannedEndDate ? (() => { const d = new Date(String(viewingPlan.plannedEndDate)); d.setMinutes(d.getMinutes() + d.getTimezoneOffset()); return d.toISOString().split("T")[0]; })() : "-"}</FieldRow>
               </div>
               <div>
                 <FieldRow label="计划类型">{planTypeMap[viewingPlan.planType] || '-'}</FieldRow>
                 <FieldRow label="生产批号">{viewingPlan.batchNo || "-"}</FieldRow>
-                <FieldRow label="计划交期">{viewingPlan.plannedEndDate ? String(viewingPlan.plannedEndDate).split("T")[0] : "-"}</FieldRow>
               </div>
             </div>
           </div>
@@ -632,9 +672,7 @@ export default function ProductionPlanBoardPage() {
               </div>
               <div>
                 <FieldRow label="优先级">
-                  <span className={priorityMap[viewingPlan.priority]?.color}>
-                    {priorityMap[viewingPlan.priority]?.label || viewingPlan.priority}
-                  </span>
+                  {(() => { const dp = calcDynamicPriority(viewingPlan); return <span className={priorityMap[dp]?.color}>{priorityMap[dp]?.label || dp}</span>; })()}
                 </FieldRow>
               </div>
             </div>

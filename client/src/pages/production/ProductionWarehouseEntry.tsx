@@ -443,9 +443,9 @@ export default function ProductionWarehouseEntryPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>关联生产任务</Label>
+                  <Label>关联生产指令</Label>
                   <Select value={formData.productionOrderId || "__NONE__"} onValueChange={(v) => handleProductionOrderChange(v === "__NONE__" ? "" : v)}>
-                    <SelectTrigger><SelectValue placeholder="选择生产任务" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="选择生产指令" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__NONE__">不关联</SelectItem>
                       {(productionOrders as any[]).map((po: any) => (
@@ -635,7 +635,7 @@ export default function ProductionWarehouseEntryPage() {
               </div>
               <div>
                 <FieldRow label="申请日期">{viewingEntry.applicationDate ? String(viewingEntry.applicationDate).split("T")[0] : "-"}</FieldRow>
-                <FieldRow label="关联生产任务">{viewingEntry.productionOrderNo || "-"}</FieldRow>
+                <FieldRow label="关联生产指令">{viewingEntry.productionOrderNo || "-"}</FieldRow>
                 <FieldRow label="关联灭菌单">{viewingEntry.sterilizationOrderNo || "-"}</FieldRow>
               </div>
             </div>

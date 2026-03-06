@@ -40,7 +40,16 @@ import {
   FileText,
   Calculator,
   X,
+  Copy,
+  MoreHorizontal,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 import { Check } from "lucide-react";
@@ -595,10 +604,16 @@ function CreateBOMDialog({
   open,
   onOpenChange,
   onSuccess,
+  initialData,
+  mode = "create",
+  existingProductIds = [],
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSuccess: () => void;
+  initialData?: any; // { record: BOM列表行, items: BOM明细数组 }
+  mode?: "create" | "edit" | "copy";
+  existingProductIds?: number[]; // 已有BOM的产品ID列表，用于重复校验
 }) {
   const { data: rawProducts = [] } = trpc.products.list.useQuery({});
   const allProducts = rawProducts as any[];
@@ -612,12 +627,22 @@ function CreateBOMDialog({
       toast.error("创建失败: " + err.message);
     },
   });
+  const replaceByProductId = trpc.bom.replaceByProductId.useMutation({
+    onSuccess: () => {
+      toast.success("BOM 保存成功");
+      onSuccess();
+      onOpenChange(false);
+    },
+    onError: (err) => {
+      toast.error("保存失败: " + err.message);
+    },
+  });
 
   // 成品产品列表
   const finishedProducts = allProducts.filter((p: any) => p.productCategory === "finished");
-  // 半成品/组件产品列表
+  // 所有可作为物料的产品（半成品、原材料、辅料均可）
   const semiFinishedProducts = allProducts.filter((p: any) =>
-    p.productCategory === "semi_finished" || p.productCategory === "auxiliary"
+    p.productCategory !== "finished"
   );
 
   // 状态
@@ -649,16 +674,55 @@ function CreateBOMDialog({
   // 选中的产品信息
   const selectedProduct = allProducts.find((p: any) => String(p.id) === selectedProductId);
 
-  // 重置表单
+  // 重置表单 / 带入初始数据
   useMemo(() => {
     if (open) {
-      setSelectedProductId("");
-      setVersion("V1.0");
-      setBomCode(generateBomCode());
-      setEffectiveDate("");
-      setLevel2Items([]);
-      setEditingLevel2(null);
-      setSemiSearch("");
+      if (initialData && (mode === "edit" || mode === "copy")) {
+        const { record, items } = initialData;
+        setSelectedProductId(String(record.productId));
+        setVersion(mode === "copy" ? "V1.0" : (record.version || "V1.0"));
+        setBomCode(mode === "copy" ? generateBomCode() : (record.bomCode || generateBomCode()));
+        setEffectiveDate(record.effectiveDate ? record.effectiveDate.split("T")[0] : "");
+        // 构建 level2Items：二级物料（level=2）带上其子级（level=3）
+        const level2Raw = (items || []).filter((i: any) => !i.parentId || i.level === 2);
+        const level3Raw = (items || []).filter((i: any) => i.parentId && i.level === 3);
+        const built: BomLevel2Item[] = level2Raw.map((item: any) => ({
+          tempId: genTempId(),
+          bomId: item.id,
+          materialCode: item.materialCode,
+          materialName: item.materialName,
+          specification: item.specification || "",
+          quantity: String(item.quantity),
+          unit: item.unit || "",
+          unitPrice: String(item.unitPrice || "0"),
+          remark: item.remark || "",
+          productId: item.productId,
+          children: level3Raw
+            .filter((c: any) => c.parentId === item.id)
+            .map((c: any) => ({
+              tempId: genTempId(),
+              bomId: c.id,
+              materialCode: c.materialCode,
+              materialName: c.materialName,
+              specification: c.specification || "",
+              quantity: String(c.quantity),
+              unit: c.unit || "",
+              unitPrice: String(c.unitPrice || "0"),
+              remark: c.remark || "",
+            })),
+        }));
+        setLevel2Items(built);
+        setEditingLevel2(null);
+        setSemiSearch("");
+      } else {
+        setSelectedProductId("");
+        setVersion("V1.0");
+        setBomCode(generateBomCode());
+        setEffectiveDate("");
+        setLevel2Items([]);
+        setEditingLevel2(null);
+        setSemiSearch("");
+      }
     }
   }, [open]);
 
@@ -779,11 +843,16 @@ function CreateBOMDialog({
       return;
     }
     if (level2Items.length === 0) {
-      toast.error("请至少添加一项二级物料");
+      toast.error("请至少添加一项物料");
+      return;
+    }
+    // 重复产品校验（新建模式下才校验）
+    if (mode === "create" && existingProductIds.includes(Number(selectedProductId))) {
+      toast.error("该产品已存在 BOM，请使用编辑功能修改，或复制后更改产品");
       return;
     }
 
-    batchCreate.mutate({
+    const payload = {
       productId: Number(selectedProductId),
       version: version.trim(),
       bomCode: bomCode.trim() || undefined,
@@ -808,7 +877,12 @@ function CreateBOMDialog({
           remark: child.remark || undefined,
         })),
       })),
-    });
+    };
+    if (mode === "edit") {
+      replaceByProductId.mutate(payload);
+    } else {
+      batchCreate.mutate(payload);
+    }
   };
 
   return (
@@ -816,8 +890,8 @@ function CreateBOMDialog({
       <DraggableDialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5" />
-            新建 BOM 物料清单
+            {mode === "edit" ? <Edit className="h-5 w-5" /> : mode === "copy" ? <Copy className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+            {mode === "edit" ? "编辑 BOM 物料清单" : mode === "copy" ? "复制 BOM 物料清单" : "新建 BOM 物料清单"}
           </DialogTitle>
         </DialogHeader>
 
@@ -1064,8 +1138,8 @@ function CreateBOMDialog({
 
         <DialogFooter className="mt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button onClick={handleSubmit} disabled={batchCreate.isPending}>
-            {batchCreate.isPending ? "提交中..." : "确认创建 BOM"}
+          <Button onClick={handleSubmit} disabled={batchCreate.isPending || replaceByProductId.isPending}>
+            {(batchCreate.isPending || replaceByProductId.isPending) ? "提交中..." : mode === "edit" ? "保存修改" : mode === "copy" ? "确认复制" : "确认创建 BOM"}
           </Button>
         </DialogFooter>
 
@@ -1184,10 +1258,14 @@ function CreateBOMDialog({
 
 export default function BOMPage() {
   const { data: rawData = [], isLoading, refetch } = trpc.bom.list.useQuery();
-  const deleteMutation = trpc.bom.delete.useMutation({
+  const trpcUtils = trpc.useUtils();
+  const deleteByProductId = trpc.bom.deleteByProductId.useMutation({
     onSuccess: () => {
       refetch();
       toast.success("删除成功");
+    },
+    onError: (err) => {
+      toast.error("删除失败: " + err.message);
     },
   });
 
@@ -1196,7 +1274,13 @@ export default function BOMPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedBom, setSelectedBom] = useState<any>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editMode, setEditMode] = useState<"edit" | "copy">("edit");
+  const [editInitialData, setEditInitialData] = useState<any>(null);
   const { canDelete } = usePermission();
+
+  // 已有 BOM 的产品 ID 列表，用于新建时重复校验
+  const existingProductIds = useMemo(() => data.map((r: any) => Number(r.productId)), [data]);
 
   const filteredData = data.filter((record: any) => {
     const matchesSearch =
@@ -1215,6 +1299,23 @@ export default function BOMPage() {
   const handleView = (record: any) => {
     setSelectedBom(record);
     setDetailOpen(true);
+  };
+
+  const handleEditOrCopy = async (record: any, mode: "edit" | "copy") => {
+    try {
+      // 获取该产品的完整 BOM 明细
+      const items = await trpcUtils.bom.list.fetch({ productId: record.productId });
+      setEditInitialData({ record, items });
+      setEditMode(mode);
+      setEditOpen(true);
+    } catch (e) {
+      toast.error("获取 BOM 明细失败");
+    }
+  };
+
+  const handleDelete = (record: any) => {
+    if (!confirm(`确认删除产品「${record.productName}」的全部 BOM 数据？此操作不可恢复。`)) return;
+    deleteByProductId.mutate({ productId: Number(record.productId) });
   };
 
   return (
@@ -1327,11 +1428,35 @@ export default function BOMPage() {
                         </TableCell>
                         <TableCell className="text-center text-sm">{formatDateValue(record.updatedAt)}</TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" onClick={() => handleView(record)} title="查看BOM结构">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleView(record)}>
+                                <Eye className="h-4 w-4 mr-2" />查看
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEditOrCopy(record, "edit")}>
+                                <Edit className="h-4 w-4 mr-2" />编辑
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEditOrCopy(record, "copy")}>
+                                <Copy className="h-4 w-4 mr-2" />复制
+                              </DropdownMenuItem>
+                              {canDelete && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-red-600 focus:text-red-600"
+                                    onClick={() => handleDelete(record)}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />删除
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );
@@ -1346,7 +1471,22 @@ export default function BOMPage() {
         <BOMDetailDialog open={detailOpen} onOpenChange={setDetailOpen} bomRecord={selectedBom} />
 
         {/* 新建 BOM 弹窗 */}
-        <CreateBOMDialog open={createOpen} onOpenChange={setCreateOpen} onSuccess={refetch} />
+        <CreateBOMDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onSuccess={refetch}
+          existingProductIds={existingProductIds}
+        />
+
+        {/* 编辑/复制 BOM 弹窗 */}
+        <CreateBOMDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSuccess={refetch}
+          initialData={editInitialData}
+          mode={editMode}
+          existingProductIds={existingProductIds}
+        />
       </div>
     </ERPLayout>
   );

@@ -166,7 +166,7 @@ const menuConfig = [
     label: "生产部",
     children: [
       { icon: LayoutDashboard, label: "生产计划看板", path: "/production/plan-board" },
-      { icon: Cog, label: "生产任务", path: "/production/orders" },
+      { icon: Cog, label: "生产指令", path: "/production/orders" },
       { icon: PackageOpen, label: "领料单", path: "/production/material-requisition" },
       { icon: ClipboardList, label: "生产记录单", path: "/production/records" },
       { icon: ArrowRightLeft, label: "生产流转单", path: "/production/routing-cards" },
@@ -198,6 +198,7 @@ const menuConfig = [
     icon: Truck,
     label: "采购部",
     children: [
+      { icon: LayoutDashboard, label: "采购计划", path: "/purchase/plan" },
       { icon: UserCheck, label: "供应商管理", path: "/purchase/suppliers" },
       { icon: FileInput, label: "采购执行", path: "/purchase/orders" },
       { icon: CreditCard, label: "财务协同", path: "/purchase/finance" },

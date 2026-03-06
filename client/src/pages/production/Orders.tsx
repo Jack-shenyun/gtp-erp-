@@ -1,10 +1,22 @@
 import { useState } from "react";
+
+/** 兼容 superjson 的日期格式化：Date 对象或字符串均可正确转为 YYYY-MM-DD */
+const fmtDate = (v: any): string => {
+  if (!v) return "-";
+  if (v instanceof Date) return v.toISOString().split("T")[0];
+  const s = String(v);
+  // ISO 字符串直接截取
+  if (s.includes("T")) return s.split("T")[0];
+  // 已经是 YYYY-MM-DD
+  return s.slice(0, 10);
+};
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Cog, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Play, CheckCircle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +71,7 @@ interface ProductionOrderRow {
   productionDate: string | null;
   expiryDate: string | null;
   planId: number | null;
+  planNo?: string | null;
   status: "draft" | "planned" | "in_progress" | "completed" | "cancelled";
   salesOrderId: number | null;
   remark: string | null;
@@ -141,13 +154,17 @@ export default function ProductionOrdersPage() {
   // 弹窗选择器状态
   const [planPickerOpen, setPlanPickerOpen] = useState(false);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
+  // 草稿库弹窗
+  const [draftLibOpen, setDraftLibOpen] = useState(false);
 
   const { data: ordersRaw = [], isLoading, refetch } = trpc.productionOrders.list.useQuery(
     { search: searchTerm || undefined, status: statusFilter !== "all" ? statusFilter : undefined }
   );
   const { data: productsData = [] } = trpc.products.list.useQuery();
   const { data: productionPlansData = [] } = trpc.productionPlans.list.useQuery();
+  const { data: companyInfoData } = trpc.companyInfo.get.useQuery();
   const createMutation = trpc.productionOrders.create.useMutation({ onSuccess: () => { refetch(); toast.success("生产指令已创建"); setFormDialogOpen(false); } });
+  const saveDraftMutation = trpc.productionOrders.create.useMutation({ onSuccess: () => { refetch(); toast.success("已保存为草稿"); setFormDialogOpen(false); } });
   const updateMutation = trpc.productionOrders.update.useMutation({ onSuccess: () => { refetch(); toast.success("生产指令已更新"); setFormDialogOpen(false); setViewDialogOpen(false); } });
   const deleteMutation = trpc.productionOrders.delete.useMutation({ onSuccess: () => { refetch(); toast.success("生产指令已删除"); } });
 
@@ -164,8 +181,18 @@ export default function ProductionOrdersPage() {
       };
     });
 
+  // 已被生产指令关联的计划 ID 集合（排除草稿和取消状态的指令）
+  const usedPlanIds = new Set(
+    (ordersRaw as any[])
+      .filter((o: any) => o.status !== "draft" && o.status !== "cancelled" && o.planId)
+      .map((o: any) => o.planId)
+  );
   const availablePlans = (productionPlansData as any[]).filter(
-    (p: any) => p.status !== "completed" && p.status !== "cancelled"
+    (p: any) =>
+      p.status !== "completed" &&
+      p.status !== "cancelled" &&
+      (p as any).productSourceType !== "purchase" &&
+      !usedPlanIds.has(p.id)
   );
 
   const [formData, setFormData] = useState({
@@ -182,9 +209,10 @@ export default function ProductionOrdersPage() {
     unit: "",
     plannedStartDate: "",
     plannedEndDate: "",
+    deliveryDate: "",
     productionDate: new Date().toISOString().split("T")[0],
     expiryDate: "",
-    status: "draft" as ProductionOrderRow["status"],
+    status: "planned" as ProductionOrderRow["status"],
     remark: "",
   });
 
@@ -208,9 +236,10 @@ export default function ProductionOrdersPage() {
       unit: "",
       plannedStartDate: today,
       plannedEndDate: "",
+      deliveryDate: "",
       productionDate: today,
       expiryDate: "",
-      status: "draft",
+      status: "planned",
       remark: "",
     });
     setFormDialogOpen(true);
@@ -232,10 +261,11 @@ export default function ProductionOrdersPage() {
       batchNo: record.batchNo || "",
       plannedQty: record.plannedQty,
       unit: record.unit || "",
-      plannedStartDate: record.plannedStartDate ? String(record.plannedStartDate).split("T")[0] : "",
-      plannedEndDate: record.plannedEndDate ? String(record.plannedEndDate).split("T")[0] : "",
-      productionDate: record.productionDate ? String(record.productionDate).split("T")[0] : today,
-      expiryDate: record.expiryDate ? String(record.expiryDate).split("T")[0] : "",
+      plannedStartDate: record.plannedStartDate ? fmtDate(record.plannedStartDate) : "",
+      plannedEndDate: record.plannedEndDate ? fmtDate(record.plannedEndDate) : "",
+      deliveryDate: "",
+      productionDate: record.productionDate ? fmtDate(record.productionDate) : today,
+      expiryDate: record.expiryDate ? fmtDate(record.expiryDate) : "",
       status: record.status,
       remark: record.remark || "",
     });
@@ -250,6 +280,161 @@ export default function ProductionOrdersPage() {
   const handleDelete = (record: ProductionOrderRow) => {
     if (!canDelete) { toast.error("您没有删除权限"); return; }
     deleteMutation.mutate({ id: record.id });
+  };
+
+  // 打印生产指令
+  const handlePrint = (record: ProductionOrderRow) => {
+    const company = companyInfoData as any;
+    const product = (productsData as any[]).find((p: any) => p.id === record.productId);
+    const orderTypeLabel = orderTypeMap[record.orderType]?.label || record.orderType;
+    const statusLabel = statusMap[record.status]?.label || record.status;
+    const logoHtml = company?.logoUrl
+      ? `<img src="${company.logoUrl}" alt="logo" style="height:60px;object-fit:contain;" />`
+      : `<div style="width:60px;height:60px;background:#e5e7eb;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#9ca3af;">LOGO</div>`;
+    const progress = record.plannedQty ? ((Number(record.completedQty || 0) / Number(record.plannedQty)) * 100).toFixed(1) : '0.0';
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>生产指令 ${record.orderNo}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SimSun', 'Arial', sans-serif; font-size: 12px; color: #111; background: #fff; padding: 20px 28px; }
+  .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .company-name { font-size: 18px; font-weight: bold; line-height: 1.3; }
+  .company-name-en { font-size: 11px; color: #555; }
+  .doc-title { text-align: center; font-size: 16px; font-weight: bold; letter-spacing: 2px; margin-bottom: 4px; }
+  .doc-no { text-align: right; font-size: 11px; color: #555; }
+  .section { margin-bottom: 12px; }
+  .section-title { font-size: 12px; font-weight: bold; background: #f3f4f6; padding: 3px 8px; border-left: 3px solid #111; margin-bottom: 6px; }
+  table.info { width: 100%; border-collapse: collapse; }
+  table.info td { padding: 5px 8px; border: 1px solid #d1d5db; font-size: 12px; }
+  table.info td.label { background: #f9fafb; font-weight: bold; width: 15%; white-space: nowrap; }
+  .progress-bar-wrap { background: #e5e7eb; border-radius: 4px; height: 10px; width: 100%; }
+  .progress-bar { background: #16a34a; height: 10px; border-radius: 4px; width: ${progress}%; }
+  .sign-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .sign-table td { border: 1px solid #d1d5db; padding: 6px 10px; text-align: center; height: 50px; font-size: 11px; }
+  .sign-table th { border: 1px solid #d1d5db; padding: 5px 10px; background: #f9fafb; font-size: 11px; }
+  .footer { margin-top: 16px; font-size: 10px; color: #9ca3af; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 6px; }
+  @media print { body { padding: 10px 16px; } }
+</style>
+</head>
+<body>
+  <!-- 文件标题 -->
+  <div class="header">
+    <div class="header-left">
+      ${logoHtml}
+      <div>
+        <div class="company-name">${company?.companyNameCn || '公司名称'}</div>
+        ${company?.companyNameEn ? `<div class="company-name-en">${company.companyNameEn}</div>` : ''}
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div class="doc-title">生产指令</div>
+      <div class="doc-no">指令单号：${record.orderNo}</div>
+      <div class="doc-no">打印时间：${new Date().toLocaleString('zh-CN')}</div>
+    </div>
+  </div>
+
+  <!-- 基本信息 -->
+  <div class="section">
+    <div class="section-title">基本信息</div>
+    <table class="info">
+      <tr>
+        <td class="label">指令单号</td><td>${record.orderNo}</td>
+        <td class="label">指令类型</td><td>${orderTypeLabel}</td>
+        <td class="label">状态</td><td>${statusLabel}</td>
+      </tr>
+      <tr>
+        <td class="label">产品名称</td><td colspan="3">${record.productName || '-'}</td>
+        <td class="label">产品编码</td><td>${record.productCode || '-'}</td>
+      </tr>
+      <tr>
+        <td class="label">规格型号</td><td>${record.productSpec || product?.specification || '-'}</td>
+        <td class="label">批次号</td><td>${record.batchNo || '-'}</td>
+        <td class="label">关联计划</td><td>${(record as any).planNo || record.planId || '-'}</td>
+      </tr>
+      <tr>
+        <td class="label">计划数量</td><td>${record.plannedQty} ${record.unit || ''}</td>
+        <td class="label">完成数量</td><td>${record.completedQty || '0'} ${record.unit || ''}</td>
+        <td class="label">完成进度</td><td>${progress}%</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- 时间安排 -->
+  <div class="section">
+    <div class="section-title">时间安排</div>
+    <table class="info">
+      <tr>
+        <td class="label">计划开始</td><td>${fmtDate(record.plannedStartDate)}</td>
+        <td class="label">计划完成（交期）</td><td>${fmtDate(record.plannedEndDate)}</td>
+        <td class="label">生产日期</td><td>${fmtDate(record.productionDate)}</td>
+      </tr>
+      <tr>
+        <td class="label">实际开始</td><td>${fmtDate(record.actualStartDate)}</td>
+        <td class="label">实际完成</td><td>${fmtDate(record.actualEndDate)}</td>
+        <td class="label">有效期至</td><td>${fmtDate(record.expiryDate)}</td>
+      </tr>
+    </table>
+  </div>
+
+  ${product?.description ? `
+  <!-- 产品描述 -->
+  <div class="section">
+    <div class="section-title">产品描述</div>
+    <table class="info"><tr><td style="padding:6px 8px;">${product.description}</td></tr></table>
+  </div>` : ''}
+
+  ${record.remark ? `
+  <!-- 备注 -->
+  <div class="section">
+    <div class="section-title">备注</div>
+    <table class="info"><tr><td style="padding:6px 8px;">${record.remark}</td></tr></table>
+  </div>` : ''}
+
+  <!-- 生产进度 -->
+  <div class="section">
+    <div class="section-title">生产进度</div>
+    <div style="padding:6px 0;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span>已完成：${record.completedQty || '0'} ${record.unit || ''} / 计划：${record.plannedQty} ${record.unit || ''}</span>
+        <span style="font-weight:bold;">${progress}%</span>
+      </div>
+      <div class="progress-bar-wrap"><div class="progress-bar"></div></div>
+    </div>
+  </div>
+
+  <!-- 签名栏 -->
+  <div class="section">
+    <div class="section-title">签名确认</div>
+    <table class="sign-table">
+      <tr>
+        <th>制单人</th><th>审核人</th><th>生产负责人</th><th>质量确认</th><th>仓库确认</th>
+      </tr>
+      <tr>
+        <td></td><td></td><td></td><td></td><td></td>
+      </tr>
+      <tr>
+        <th>日期</th><th>日期</th><th>日期</th><th>日期</th><th>日期</th>
+      </tr>
+      <tr>
+        <td></td><td></td><td></td><td></td><td></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="footer">${company?.companyNameCn || ''} ${company?.addressCn ? '· ' + company.addressCn : ''} ${company?.phone ? '· Tel: ' + company.phone : ''}</div>
+</body>
+</html>`;
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 600);
+    }
   };
 
   // 切换指令类型时自动重新生成批号
@@ -274,7 +459,8 @@ export default function ProductionOrdersPage() {
       productDescription: product?.description || "",
       plannedQty: plan.plannedQty || "",
       unit: plan.unit || product?.unit || "",
-      plannedEndDate: plan.plannedEndDate ? String(plan.plannedEndDate).split("T")[0] : "",
+      plannedEndDate: plan.plannedEndDate ? fmtDate(plan.plannedEndDate) : "",
+      deliveryDate: plan.plannedEndDate ? fmtDate(plan.plannedEndDate) : "",
       expiryDate,
       remark: plan.salesOrderNo ? `关联销售订单: ${plan.salesOrderNo}` : formData.remark,
     });
@@ -348,6 +534,38 @@ export default function ProductionOrdersPage() {
     }
   };
 
+  // 保存草稿（不校验必填项，status=draft）
+  const handleSaveDraft = () => {
+    const orderNo = `MO-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+    saveDraftMutation.mutate({
+      orderNo,
+      orderType: formData.orderType,
+      productId: formData.productId || 0,
+      plannedQty: formData.plannedQty || "0",
+      unit: formData.unit || undefined,
+      batchNo: formData.batchNo || undefined,
+      plannedStartDate: formData.plannedStartDate || undefined,
+      plannedEndDate: formData.plannedEndDate || undefined,
+      productionDate: formData.productionDate || undefined,
+      expiryDate: formData.expiryDate || undefined,
+      planId: formData.planId || undefined,
+      status: "draft",
+      remark: formData.remark || undefined,
+    });
+  };
+
+  // 从草稿库发布为已计划
+  const handlePublishDraft = (record: ProductionOrderRow) => {
+    updateMutation.mutate({ id: record.id, data: { status: "planned" } });
+    setDraftLibOpen(false);
+  };
+
+  // 从草稿库继续编辑
+  const handleEditDraft = (record: ProductionOrderRow) => {
+    setDraftLibOpen(false);
+    handleEdit(record);
+  };
+
   const handleStatusChange = (record: ProductionOrderRow, newStatus: ProductionOrderRow["status"]) => {
     const updates: any = { status: newStatus };
     if (newStatus === "in_progress" && !record.actualStartDate) updates.actualStartDate = new Date().toISOString().split("T")[0];
@@ -361,6 +579,30 @@ export default function ProductionOrdersPage() {
     semiFinished: (ordersRaw as any[]).filter((r: any) => r.orderType === "semi_finished").length,
     rework: (ordersRaw as any[]).filter((r: any) => r.orderType === "rework").length,
     inProgress: (ordersRaw as any[]).filter((r: any) => r.status === "in_progress").length,
+  };
+
+  /** 产品描述：超过80字折叠，点击展开 */
+  const DescriptionCell = ({ text, label }: { text: string; label?: string }) => {
+    const [expanded, setExpanded] = useState(false);
+    const LIMIT = 80;
+    const isLong = text.length > LIMIT;
+    return (
+      <div>
+        {label && <span className="text-muted-foreground">{label}</span>}
+        <span className={!expanded && isLong ? "line-clamp-2" : ""}>
+          {!expanded && isLong ? text.slice(0, LIMIT) + "…" : text}
+        </span>
+        {isLong && (
+          <button
+            type="button"
+            className="ml-1 text-xs text-primary underline"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "收起" : "展开"}
+          </button>
+        )}
+      </div>
+    );
   };
 
   const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
@@ -389,7 +631,17 @@ export default function ProductionOrdersPage() {
               <p className="text-sm text-muted-foreground">管理成品、半成品及返工生产指令</p>
             </div>
           </div>
-          <Button onClick={handleAdd}><Plus className="h-4 w-4 mr-2" />新建生产指令</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setDraftLibOpen(true)}>
+              <span className="mr-1">📂</span>草稿库
+              {(ordersRaw as any[]).filter((r: any) => r.status === "draft").length > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                  {(ordersRaw as any[]).filter((r: any) => r.status === "draft").length}
+                </span>
+              )}
+            </Button>
+            <Button onClick={handleAdd}><Plus className="h-4 w-4 mr-2" />新建生产指令</Button>
+          </div>
         </div>
 
         {/* 统计卡片 */}
@@ -437,8 +689,9 @@ export default function ProductionOrdersPage() {
                 <TableHead className="text-center font-bold">指令单号</TableHead>
                 <TableHead className="text-center font-bold">指令类型</TableHead>
                 <TableHead className="text-center font-bold">批次号</TableHead>
-                <TableHead className="text-center font-bold">产品名称</TableHead>
+                <TableHead className="text-center font-bold min-w-[180px]">产品名称</TableHead>
                 <TableHead className="text-center font-bold">生产进度</TableHead>
+                <TableHead className="text-center font-bold">交期</TableHead>
                 <TableHead className="text-center font-bold">生产日期</TableHead>
                 <TableHead className="text-center font-bold">有效期至</TableHead>
                 <TableHead className="text-center font-bold">状态</TableHead>
@@ -458,10 +711,17 @@ export default function ProductionOrdersPage() {
                       <Badge variant={typeInfo.badge} className={typeInfo.color}>{typeInfo.label}</Badge>
                     </TableCell>
                     <TableCell className="text-center font-medium font-mono">{record.batchNo || "-"}</TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center min-w-[180px]">
                       <div>
                         <div className="font-medium">{record.productName}</div>
-                        {record.productCode && <div className="text-xs text-muted-foreground font-mono">{record.productCode}</div>}
+                        {record.productSpec && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="text-xs text-muted-foreground truncate max-w-[200px] mx-auto cursor-default">{record.productSpec}</div>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="max-w-xs whitespace-pre-wrap">{record.productSpec}</p></TooltipContent>
+                          </Tooltip>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-center">
@@ -473,8 +733,9 @@ export default function ProductionOrdersPage() {
                         <Progress value={progress} className="h-1.5" />
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">{record.productionDate ? String(record.productionDate).split("T")[0] : "-"}</TableCell>
-                    <TableCell className="text-center">{record.expiryDate ? String(record.expiryDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell className="text-center text-sm">{fmtDate(record.plannedEndDate)}</TableCell>
+                    <TableCell className="text-center">{fmtDate(record.productionDate)}</TableCell>
+                    <TableCell className="text-center">{fmtDate(record.expiryDate)}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant={statusMap[record.status]?.variant || "outline"} className={getStatusSemanticClass(record.status, statusMap[record.status]?.label)}>
                         {statusMap[record.status]?.label || record.status}
@@ -504,7 +765,7 @@ export default function ProductionOrdersPage() {
                 );
               })}
               {data.length === 0 && (
-                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">{isLoading ? "加载中..." : "暂无数据"}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">{isLoading ? "加载中..." : "暂无数据"}</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -605,12 +866,12 @@ export default function ProductionOrdersPage() {
 
               {/* 产品信息展示（只读） */}
               {formData.productId > 0 && (formData.productSpec || formData.productDescription) && (
-                <div className="rounded-md bg-muted/50 p-3 grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-md bg-muted/50 p-3 space-y-2 text-sm">
                   {formData.productSpec && (
                     <div><span className="text-muted-foreground">规格型号：</span><span>{formData.productSpec}</span></div>
                   )}
                   {formData.productDescription && (
-                    <div className="col-span-2"><span className="text-muted-foreground">产品描述：</span><span>{formData.productDescription}</span></div>
+                    <DescriptionCell text={formData.productDescription} label="产品描述：" />
                   )}
                 </div>
               )}
@@ -631,7 +892,18 @@ export default function ProductionOrdersPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>计划完成日期</Label>
-                  <Input type="date" value={formData.plannedEndDate} onChange={(e) => setFormData({ ...formData, plannedEndDate: e.target.value })} />
+                  <Input
+                    type="date"
+                    value={formData.plannedEndDate}
+                    max={formData.deliveryDate || undefined}
+                    onChange={(e) => setFormData({ ...formData, plannedEndDate: e.target.value })}
+                  />
+                  {formData.deliveryDate && (
+                    <p className="text-xs text-amber-600">交期 {formData.deliveryDate} 前</p>
+                  )}
+                  {formData.deliveryDate && formData.plannedEndDate && formData.plannedEndDate > formData.deliveryDate && (
+                    <p className="text-xs text-destructive">警告：计划完成日期超过交期</p>
+                  )}
                 </div>
               </div>
 
@@ -670,7 +942,14 @@ export default function ProductionOrdersPage() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setFormDialogOpen(false)}>取消</Button>
-              <Button onClick={handleSubmit}>{isEditing ? "保存" : "创建"}</Button>
+              {!isEditing && (
+                <Button variant="secondary" onClick={handleSaveDraft} disabled={saveDraftMutation.isPending}>
+                  保存草稿
+                </Button>
+              )}
+              <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
+                {isEditing ? "保存" : "创建"}
+              </Button>
             </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>
@@ -682,14 +961,30 @@ export default function ProductionOrdersPage() {
           title="选择生产计划"
           searchPlaceholder="搜索计划编号、产品名称..."
           columns={[
-            { key: "planNo", title: "计划编号", render: (p) => <span className="font-mono font-medium">{p.planNo}</span> },
-            { key: "productName", title: "产品名称", render: (p) => <span className="font-medium">{p.productName || "-"}</span> },
-            { key: "plannedQty", title: "计划数量", render: (p) => <span>{p.plannedQty} {p.unit}</span> },
-            { key: "plannedEndDate", title: "交期", render: (p) => <span>{p.plannedEndDate ? String(p.plannedEndDate).split("T")[0] : "-"}</span> },
-            { key: "salesOrderNo", title: "销售订单", render: (p) => <span className="text-muted-foreground">{p.salesOrderNo || "内部计划"}</span> },
+            { key: "planNo", title: "计划编号", className: "w-[160px] whitespace-nowrap", render: (p) => <span className="font-mono">{p.planNo}</span> },
+            { key: "productName", title: "产品名称", className: "max-w-[160px]", render: (p) => (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="block truncate max-w-[150px] font-medium cursor-default">{p.productName || "-"}</span>
+                </TooltipTrigger>
+                <TooltipContent><p className="max-w-xs">{p.productName}</p></TooltipContent>
+              </Tooltip>
+            )},
+            { key: "productSpecification", title: "规格型号", className: "max-w-[140px]", render: (p) => p.productSpecification ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="block truncate max-w-[130px] text-muted-foreground cursor-default">{p.productSpecification}</span>
+                </TooltipTrigger>
+                <TooltipContent><p className="max-w-xs">{p.productSpecification}</p></TooltipContent>
+              </Tooltip>
+            ) : <span className="text-muted-foreground">-</span> },
+            { key: "plannedQty", title: "计划数量", className: "w-[90px] whitespace-nowrap", render: (p) => <span>{p.plannedQty} {p.unit}</span> },
+            { key: "plannedEndDate", title: "交期", className: "w-[90px] whitespace-nowrap", render: (p) => <span className="font-medium text-amber-600">{fmtDate(p.plannedEndDate)}</span> },
+            { key: "salesOrderNo", title: "销售订单", className: "w-[120px] whitespace-nowrap", render: (p) => <span className="text-muted-foreground font-mono">{p.salesOrderNo || "内部计划"}</span> },
           ]}
           rows={availablePlans}
           selectedId={formData.planId ? String(formData.planId) : ""}
+          defaultWidth={900}
           filterFn={(p, q) => {
             const lower = q.toLowerCase();
             return String(p.planNo || "").toLowerCase().includes(lower) ||
@@ -711,7 +1006,7 @@ export default function ProductionOrdersPage() {
             { key: "unit", title: "单位" },
             { key: "shelfLife", title: "保质期", render: (p) => <span>{p.shelfLife ? `${p.shelfLife}个月` : "-"}</span> },
           ]}
-          rows={(productsData as any[]).filter((p: any) => p.status === "active")}
+          rows={(productsData as any[]).filter((p: any) => p.status === "active" && p.sourceType === "production")}
           selectedId={formData.productId ? String(formData.productId) : ""}
           filterFn={(p, q) => {
             const lower = q.toLowerCase();
@@ -754,9 +1049,18 @@ export default function ProductionOrdersPage() {
                 </Badge>
               </FieldRow>
               <FieldRow label="批次号">{selectedRecord.batchNo || '-'}</FieldRow>
-              <FieldRow label="关联计划">{selectedRecord.planId || '-'}</FieldRow>
+              <FieldRow label="关联计划">{(selectedRecord as any).planNo || selectedRecord.planId || '-'}</FieldRow>
             </div>
           </div>
+          {(() => {
+            const product = (productsData as any[]).find((p: any) => p.id === selectedRecord.productId);
+            return product?.description ? (
+              <div className="mt-2 pt-2 border-t border-border/40">
+                <span className="text-sm text-muted-foreground">产品描述：</span>
+                <DescriptionCell text={product.description} />
+              </div>
+            ) : null;
+          })()}
         </div>
 
         <div>
@@ -778,14 +1082,14 @@ export default function ProductionOrdersPage() {
           <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">时间安排</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
             <div>
-              <FieldRow label="计划开始">{selectedRecord.plannedStartDate ? String(selectedRecord.plannedStartDate).split("T")[0] : "-"}</FieldRow>
-              <FieldRow label="计划完成">{selectedRecord.plannedEndDate ? String(selectedRecord.plannedEndDate).split("T")[0] : "-"}</FieldRow>
-              <FieldRow label="生产日期">{selectedRecord.productionDate ? String(selectedRecord.productionDate).split("T")[0] : "-"}</FieldRow>
+              <FieldRow label="计划开始">{fmtDate(selectedRecord.plannedStartDate)}</FieldRow>
+              <FieldRow label="计划完成">{fmtDate(selectedRecord.plannedEndDate)}</FieldRow>
+              <FieldRow label="生产日期">{fmtDate(selectedRecord.productionDate)}</FieldRow>
             </div>
             <div>
-              <FieldRow label="实际开始">{selectedRecord.actualStartDate ? String(selectedRecord.actualStartDate).split("T")[0] : "-"}</FieldRow>
-              <FieldRow label="实际完成">{selectedRecord.actualEndDate ? String(selectedRecord.actualEndDate).split("T")[0] : "-"}</FieldRow>
-              <FieldRow label="有效期至">{selectedRecord.expiryDate ? String(selectedRecord.expiryDate).split("T")[0] : "-"}</FieldRow>
+              <FieldRow label="实际开始">{fmtDate(selectedRecord.actualStartDate)}</FieldRow>
+              <FieldRow label="实际完成">{fmtDate(selectedRecord.actualEndDate)}</FieldRow>
+              <FieldRow label="有效期至">{fmtDate(selectedRecord.expiryDate)}</FieldRow>
             </div>
           </div>
         </div>
@@ -809,6 +1113,7 @@ export default function ProductionOrdersPage() {
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+          <Button variant="outline" size="sm" onClick={() => handlePrint(selectedRecord)}>🖨️ 打印</Button>
           <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
           {canDelete && (
             <Button variant="destructive" size="sm" onClick={() => handleDelete(selectedRecord)}>删除</Button>
@@ -818,6 +1123,91 @@ export default function ProductionOrdersPage() {
     </DraggableDialogContent>
   </DraggableDialog>
 )}
+      {/* 草稿库弹窗 */}
+      <DraggableDialog open={draftLibOpen} onOpenChange={setDraftLibOpen} defaultWidth={860} defaultHeight={520}>
+        <DraggableDialogContent>
+          <DialogHeader>
+            <DialogTitle>📂 草稿库</DialogTitle>
+          </DialogHeader>
+          <div className="mt-3">
+            {(() => {
+              const drafts = (ordersRaw as any[]).filter((r: any) => r.status === "draft");
+              if (drafts.length === 0) {
+                return (
+                  <div className="text-center py-16 text-muted-foreground">
+                    <p className="text-4xl mb-3">📄</p>
+                    <p>草稿库为空，新建生产指令时点击“保存草稿”即可保存</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="max-h-[360px] overflow-y-auto">
+                    <Table className="text-xs">
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="py-2 text-xs">指令单号</TableHead>
+                          <TableHead className="py-2 text-xs">指令类型</TableHead>
+                          <TableHead className="py-2 text-xs">产品名称</TableHead>
+                          <TableHead className="py-2 text-xs">规格型号</TableHead>
+                          <TableHead className="py-2 text-xs">计划数量</TableHead>
+                          <TableHead className="py-2 text-xs">交期</TableHead>
+                          <TableHead className="py-2 text-xs">创建时间</TableHead>
+                          <TableHead className="py-2 text-xs text-right w-[140px]">操作</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {drafts.map((r: any) => {
+                          const product = (productsData as any[]).find((p: any) => p.id === r.productId);
+                          return (
+                            <TableRow key={r.id} className="hover:bg-muted/50">
+                              <TableCell className="py-1.5 font-mono">{r.orderNo}</TableCell>
+                              <TableCell className="py-1.5">
+                                <Badge variant={orderTypeMap[r.orderType as OrderType]?.badge || "outline"} className="text-xs">
+                                  {orderTypeMap[r.orderType as OrderType]?.label || r.orderType}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-1.5 max-w-[140px]">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="block truncate max-w-[130px] font-medium cursor-default">{product?.name || r.productName || "-"}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent><p>{product?.name || r.productName}</p></TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="py-1.5 text-muted-foreground">{product?.specification || "-"}</TableCell>
+                              <TableCell className="py-1.5">{r.plannedQty} {r.unit || ""}</TableCell>
+                              <TableCell className="py-1.5 text-amber-600 font-medium">{fmtDate(r.plannedEndDate)}</TableCell>
+                              <TableCell className="py-1.5 text-muted-foreground">{fmtDate(r.createdAt)}</TableCell>
+                              <TableCell className="py-1.5 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700" onClick={() => handleEditDraft(r)}>
+                                    编辑
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-green-600 hover:text-green-700" onClick={() => handlePublishDraft(r)}>
+                                    发布
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-red-500 hover:text-red-600" onClick={() => { deleteMutation.mutate({ id: r.id }); }}>
+                                    删除
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setDraftLibOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DraggableDialogContent>
+      </DraggableDialog>
+
       </div>
     </ERPLayout>
   );

@@ -429,6 +429,23 @@ export default function ReceivablePage() {
     setReceiptFiles((prev) => prev.filter((x) => x.id !== id));
   };
 
+  const appendDetailFiles = (fileList: FileList | File[]) => {
+    const incoming = Array.from(fileList || []);
+    if (incoming.length === 0) return;
+    const next = [...detailFiles];
+    for (const f of incoming) {
+      const ext = `.${String(f.name.split(".").pop() || "").toLowerCase()}`;
+      if (!ATTACHMENT_EXTENSIONS.includes(ext as any)) {
+        toast.error(`不支持的文件格式：${f.name}`);
+        continue;
+      }
+      const exists = next.some((x) => x.file.name === f.name && x.file.size === f.size);
+      if (exists) continue;
+      next.push({ id: `${Date.now()}-${Math.random()}`, file: f });
+    }
+    setDetailFiles(next);
+  };
+
   const toBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -654,16 +671,16 @@ export default function ReceivablePage() {
       (Number.isFinite(salesOrderId) && salesOrderId > 0 ? salesOrderLookups.byId.get(salesOrderId) : undefined);
     return String(linkedOrder?.paymentMethod ?? r?.paymentMethod ?? "");
   };
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
+
   const resolveLinkedOrder = (r: any) => {
     const orderNo = String(r?.orderNo ?? "").trim();
     const salesOrderId = Number(r?.salesOrderId);
-    const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
-        <span className="flex-1 text-sm text-right break-all">{children}</span>
-      </div>
-    );
-
     return (
       (orderNo ? salesOrderLookups.byNo.get(orderNo) : undefined) ??
       (Number.isFinite(salesOrderId) && salesOrderId > 0 ? salesOrderLookups.byId.get(salesOrderId) : undefined)
@@ -1743,11 +1760,68 @@ export default function ReceivablePage() {
           </div>
         )}
 
+        {/* 附件底单上传 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">附件底单</h3>
+          <div
+            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer ${
+              detailDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+            }`}
+            onDragOver={(e) => { e.preventDefault(); setDetailDragging(true); }}
+            onDragLeave={() => setDetailDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDetailDragging(false);
+              const files = e.dataTransfer.files;
+              if (files.length > 0) appendDetailFiles(files);
+            }}
+            onClick={() => document.getElementById('detail-file-input')?.click()}
+          >
+            <input
+              id="detail-file-input"
+              type="file"
+              multiple
+              accept={ATTACHMENT_ACCEPT}
+              className="hidden"
+              onChange={(e) => { if (e.target.files) appendDetailFiles(e.target.files); e.target.value = ""; }}
+            />
+            <Upload className="h-6 w-6 mx-auto mb-1 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">拖拽文件到此处，或点击选择文件</p>
+            <p className="text-xs text-muted-foreground mt-0.5">支持 PDF、图片、Excel、Word 等格式</p>
+          </div>
+          {detailFiles.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {detailFiles.map((item) => (
+                <div key={item.id} className="flex items-center justify-between rounded border px-2 py-1.5 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="truncate">{item.file.name}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{(item.file.size / 1024).toFixed(0)} KB</span>
+                  </div>
+                  <Button type="button" size="icon" variant="ghost" onClick={() => setDetailFiles(prev => prev.filter(x => x.id !== item.id))}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
           <div className="flex gap-2 flex-wrap"></div>
           <div className="flex gap-2 flex-wrap justify-end">
             <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
             <Button variant="outline" size="sm" onClick={() => handleEdit(viewingReceivable)}>编辑</Button>
+            {isSalesCollaboration && normalizeStatus(viewingReceivable.status) !== "received" && (
+              <Button
+                size="sm"
+                onClick={() => handleSubmitFinanceFromDetail()}
+                disabled={updateMutation.isPending || createMutation.isPending || saveAttachmentsMutation.isPending}
+              >
+                <DollarSign className="h-4 w-4 mr-1" />
+                提交财务
+              </Button>
+            )}
           </div>
         </div>
       </div>

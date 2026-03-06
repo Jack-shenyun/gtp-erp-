@@ -337,12 +337,12 @@ export default function ProductionRoutingCardPage() {
                   <Input value={formData.cardNo} onChange={(e) => setFormData({ ...formData, cardNo: e.target.value })} readOnly={!!editingCard} />
                 </div>
                 <div className="space-y-2">
-                  <Label>关联生产任务</Label>
+                  <Label>关联生产指令</Label>
                   <Select
                     value={formData.productionOrderId || "__NONE__"}
                     onValueChange={(v) => handleProductionOrderChange(v === "__NONE__" ? "" : v)}
                   >
-                    <SelectTrigger><SelectValue placeholder="选择生产任务" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="选择生产指令" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__NONE__">不关联</SelectItem>
                       {(productionOrders as any[]).map((po: any) => (
@@ -454,7 +454,7 @@ export default function ProductionRoutingCardPage() {
             </div>
             <div>
               <FieldRow label="数量">{viewingCard.quantity} {viewingCard.unit}</FieldRow>
-              <FieldRow label="关联生产任务">{viewingCard.productionOrderNo || "-"}</FieldRow>
+              <FieldRow label="关联生产指令">{viewingCard.productionOrderNo || "-"}</FieldRow>
             </div>
           </div>
         </div>

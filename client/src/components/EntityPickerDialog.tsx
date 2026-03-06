@@ -147,15 +147,15 @@ export function EntityPickerDialog<T extends Record<string, any>>({
           {/* 表格 */}
           <div className="border rounded-lg overflow-hidden">
             <div className="max-h-[380px] overflow-y-auto">
-              <Table>
+              <Table className="text-xs">
                 <TableHeader>
                   <TableRow className="bg-muted/50 sticky top-0">
                     {columns.map((col) => (
-                      <TableHead key={col.key} className={col.className}>
+                      <TableHead key={col.key} className={cn("py-2 text-xs", col.className)}>
                         {col.title}
                       </TableHead>
                     ))}
-                    <TableHead className="text-right w-[80px]">操作</TableHead>
+                    <TableHead className="text-right w-[60px] py-2 text-xs">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -184,20 +184,20 @@ export function EntityPickerDialog<T extends Record<string, any>>({
                           onClick={() => onSelect(row)}
                         >
                           {columns.map((col) => (
-                            <TableCell key={col.key} className={col.className}>
+                            <TableCell key={col.key} className={cn("py-1.5", col.className)}>
                               {col.render
                                 ? col.render(row)
                                 : (row[col.key] ?? "-")}
                             </TableCell>
                           ))}
-                          <TableCell className="text-right">
+                          <TableCell className="text-right py-1.5">
                             {isSelected ? (
-                              <Check className="h-5 w-5 text-green-600 ml-auto" />
+                              <Check className="h-4 w-4 text-green-600 ml-auto" />
                             ) : (
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onSelect(row);
