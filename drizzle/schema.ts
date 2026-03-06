@@ -75,6 +75,8 @@ export const bom = mysqlTable("bom", {
   version: varchar("version", { length: 20 }), // BOM版本
   status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
   remark: varchar("remark", { length: 500 }), // 备注
+  bomCode: varchar("bomCode", { length: 50 }), // BOM编号（自动生成，可手动修改）
+  effectiveDate: date("effectiveDate"), // 生效日期
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -396,6 +398,9 @@ export const productionOrders = mysqlTable("production_orders", {
   actualEndDate: date("actualEndDate"),
   status: mysqlEnum("status", ["draft", "planned", "in_progress", "completed", "cancelled"]).default("draft").notNull(),
   salesOrderId: int("salesOrderId"), // 关联销售订单
+  planId: int("planId"), // 关联生产计划
+  productionDate: date("productionDate"), // 生产日期
+  expiryDate: date("expiryDate"), // 有效期至
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

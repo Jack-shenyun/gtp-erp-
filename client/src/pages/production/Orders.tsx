@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Cog, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Play, CheckCircle } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -45,6 +46,7 @@ interface ProductionOrderRow {
   productId: number;
   productName?: string;
   productCode?: string;
+  productSpec?: string;
   plannedQty: string;
   completedQty: string | null;
   unit: string | null;
@@ -53,6 +55,9 @@ interface ProductionOrderRow {
   plannedEndDate: string | null;
   actualStartDate: string | null;
   actualEndDate: string | null;
+  productionDate: string | null;
+  expiryDate: string | null;
+  planId: number | null;
   status: "draft" | "planned" | "in_progress" | "completed" | "cancelled";
   salesOrderId: number | null;
   remark: string | null;
@@ -113,6 +118,15 @@ function generateBatchNo(orderType: OrderType, existingOrders: any[]): string {
   return `${fullDateStr}${String(seq).padStart(2, "0")}`;
 }
 
+/** 根据生产日期和保质期（月）计算有效期至 */
+function calcExpiryDate(productionDate: string, shelfLifeMonths: number): string {
+  if (!productionDate || !shelfLifeMonths) return "";
+  const d = new Date(productionDate);
+  d.setMonth(d.getMonth() + shelfLifeMonths);
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split("T")[0];
+}
+
 export default function ProductionOrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -122,6 +136,10 @@ export default function ProductionOrdersPage() {
   const [selectedRecord, setSelectedRecord] = useState<ProductionOrderRow | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const { canDelete } = usePermission();
+
+  // 弹窗选择器状态
+  const [planPickerOpen, setPlanPickerOpen] = useState(false);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
 
   const { data: ordersRaw = [], isLoading, refetch } = trpc.productionOrders.list.useQuery(
     { search: searchTerm || undefined, status: statusFilter !== "all" ? statusFilter : undefined }
@@ -136,7 +154,13 @@ export default function ProductionOrdersPage() {
     .filter((o: any) => typeFilter === "all" || o.orderType === typeFilter)
     .map((o: any) => {
       const product = (productsData as any[]).find((p: any) => p.id === o.productId);
-      return { ...o, orderType: o.orderType || "finished", productName: product?.name || "-", productCode: product?.code || "-" };
+      return {
+        ...o,
+        orderType: o.orderType || "finished",
+        productName: product?.name || "-",
+        productCode: product?.code || "-",
+        productSpec: product?.specification || "",
+      };
     });
 
   const availablePlans = (productionPlansData as any[]).filter(
@@ -146,15 +170,24 @@ export default function ProductionOrdersPage() {
   const [formData, setFormData] = useState({
     orderType: "finished" as OrderType,
     planId: 0,
+    planNo: "",
     productId: 0,
+    productName: "",
+    productCode: "",
+    productSpec: "",
+    productDescription: "",
     batchNo: "",
     plannedQty: "",
     unit: "",
     plannedStartDate: "",
     plannedEndDate: "",
+    productionDate: new Date().toISOString().split("T")[0],
+    expiryDate: "",
     status: "draft" as ProductionOrderRow["status"],
     remark: "",
   });
+
+  const today = new Date().toISOString().split("T")[0];
 
   const handleAdd = () => {
     setIsEditing(false);
@@ -163,12 +196,19 @@ export default function ProductionOrdersPage() {
     setFormData({
       orderType: "finished",
       planId: 0,
+      planNo: "",
       productId: 0,
+      productName: "",
+      productCode: "",
+      productSpec: "",
+      productDescription: "",
       batchNo,
       plannedQty: "",
       unit: "",
-      plannedStartDate: new Date().toISOString().split("T")[0],
+      plannedStartDate: today,
       plannedEndDate: "",
+      productionDate: today,
+      expiryDate: "",
       status: "draft",
       remark: "",
     });
@@ -178,15 +218,23 @@ export default function ProductionOrdersPage() {
   const handleEdit = (record: ProductionOrderRow) => {
     setIsEditing(true);
     setSelectedRecord(record);
+    const product = (productsData as any[]).find((p: any) => p.id === record.productId);
     setFormData({
       orderType: record.orderType || "finished",
-      planId: 0,
+      planId: record.planId || 0,
+      planNo: "",
       productId: record.productId,
+      productName: product?.name || "",
+      productCode: product?.code || "",
+      productSpec: product?.specification || "",
+      productDescription: product?.description || "",
       batchNo: record.batchNo || "",
       plannedQty: record.plannedQty,
       unit: record.unit || "",
       plannedStartDate: record.plannedStartDate ? String(record.plannedStartDate).split("T")[0] : "",
       plannedEndDate: record.plannedEndDate ? String(record.plannedEndDate).split("T")[0] : "",
+      productionDate: record.productionDate ? String(record.productionDate).split("T")[0] : today,
+      expiryDate: record.expiryDate ? String(record.expiryDate).split("T")[0] : "",
       status: record.status,
       remark: record.remark || "",
     });
@@ -206,23 +254,54 @@ export default function ProductionOrdersPage() {
   // 切换指令类型时自动重新生成批号
   const handleOrderTypeChange = (type: OrderType) => {
     const batchNo = generateBatchNo(type, ordersRaw as any[]);
-    setFormData((f) => ({ ...f, orderType: type, batchNo, planId: 0, productId: 0 }));
+    setFormData((f) => ({ ...f, orderType: type, batchNo, planId: 0, planNo: "", productId: 0, productName: "", productCode: "" }));
   };
 
-  const handlePlanChange = (planId: string) => {
-    const plan = availablePlans.find((p: any) => p.id === Number(planId));
-    if (plan) {
-      const product = (productsData as any[]).find((p: any) => p.id === plan.productId);
-      setFormData({
-        ...formData,
-        planId: plan.id,
-        productId: plan.productId,
-        plannedQty: plan.plannedQty || "",
-        unit: plan.unit || product?.unit || "",
-        plannedEndDate: plan.plannedEndDate ? String(plan.plannedEndDate).split("T")[0] : "",
-        remark: plan.salesOrderNo ? `关联销售订单: ${plan.salesOrderNo}` : formData.remark,
-      });
-    }
+  // 选择生产计划后自动带入产品信息
+  const handlePlanSelect = (plan: any) => {
+    const product = (productsData as any[]).find((p: any) => p.id === plan.productId);
+    const newProductionDate = formData.productionDate || today;
+    const expiryDate = product?.shelfLife ? calcExpiryDate(newProductionDate, Number(product.shelfLife)) : "";
+    setFormData({
+      ...formData,
+      planId: plan.id,
+      planNo: plan.planNo,
+      productId: plan.productId,
+      productName: product?.name || plan.productName || "",
+      productCode: product?.code || "",
+      productSpec: product?.specification || "",
+      productDescription: product?.description || "",
+      plannedQty: plan.plannedQty || "",
+      unit: plan.unit || product?.unit || "",
+      plannedEndDate: plan.plannedEndDate ? String(plan.plannedEndDate).split("T")[0] : "",
+      expiryDate,
+      remark: plan.salesOrderNo ? `关联销售订单: ${plan.salesOrderNo}` : formData.remark,
+    });
+    setPlanPickerOpen(false);
+  };
+
+  // 选择产品后自动带入信息
+  const handleProductSelect = (product: any) => {
+    const newProductionDate = formData.productionDate || today;
+    const expiryDate = product?.shelfLife ? calcExpiryDate(newProductionDate, Number(product.shelfLife)) : "";
+    setFormData({
+      ...formData,
+      productId: product.id,
+      productName: product.name || "",
+      productCode: product.code || "",
+      productSpec: product.specification || "",
+      productDescription: product.description || "",
+      unit: product.unit || formData.unit,
+      expiryDate,
+    });
+    setProductPickerOpen(false);
+  };
+
+  // 生产日期变化时重新计算有效期至
+  const handleProductionDateChange = (date: string) => {
+    const product = (productsData as any[]).find((p: any) => p.id === formData.productId);
+    const expiryDate = product?.shelfLife ? calcExpiryDate(date, Number(product.shelfLife)) : formData.expiryDate;
+    setFormData({ ...formData, productionDate: date, expiryDate });
   };
 
   const handleSubmit = () => {
@@ -241,6 +320,9 @@ export default function ProductionOrdersPage() {
           batchNo: formData.batchNo || undefined,
           plannedStartDate: formData.plannedStartDate || undefined,
           plannedEndDate: formData.plannedEndDate || undefined,
+          productionDate: formData.productionDate || undefined,
+          expiryDate: formData.expiryDate || undefined,
+          planId: formData.planId || undefined,
           status: formData.status,
           remark: formData.remark || undefined,
         },
@@ -256,6 +338,9 @@ export default function ProductionOrdersPage() {
         batchNo: formData.batchNo || undefined,
         plannedStartDate: formData.plannedStartDate || undefined,
         plannedEndDate: formData.plannedEndDate || undefined,
+        productionDate: formData.productionDate || undefined,
+        expiryDate: formData.expiryDate || undefined,
+        planId: formData.planId || undefined,
         status: formData.status,
         remark: formData.remark || undefined,
       });
@@ -338,9 +423,10 @@ export default function ProductionOrdersPage() {
                 <TableHead>指令单号</TableHead>
                 <TableHead>指令类型</TableHead>
                 <TableHead>批次号</TableHead>
-                <TableHead>产品</TableHead>
+                <TableHead>产品名称</TableHead>
                 <TableHead>生产进度</TableHead>
-                <TableHead>计划完成日期</TableHead>
+                <TableHead>生产日期</TableHead>
+                <TableHead>有效期至</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
@@ -358,7 +444,12 @@ export default function ProductionOrdersPage() {
                       <Badge variant={typeInfo.badge} className={typeInfo.color}>{typeInfo.label}</Badge>
                     </TableCell>
                     <TableCell className="font-medium font-mono">{record.batchNo || "-"}</TableCell>
-                    <TableCell>{record.productName}</TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{record.productName}</div>
+                        {record.productCode && <div className="text-xs text-muted-foreground font-mono">{record.productCode}</div>}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="space-y-1 w-32">
                         <div className="flex items-center justify-between text-xs">
@@ -368,7 +459,8 @@ export default function ProductionOrdersPage() {
                         <Progress value={progress} className="h-1.5" />
                       </div>
                     </TableCell>
-                    <TableCell>{record.plannedEndDate ? String(record.plannedEndDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell>{record.productionDate ? String(record.productionDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell>{record.expiryDate ? String(record.expiryDate).split("T")[0] : "-"}</TableCell>
                     <TableCell>
                       <Badge variant={statusMap[record.status]?.variant || "outline"} className={statusMap[record.status]?.color || ""}>
                         {statusMap[record.status]?.label || record.status}
@@ -398,7 +490,7 @@ export default function ProductionOrdersPage() {
                 );
               })}
               {data.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">{isLoading ? "加载中..." : "暂无数据"}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">{isLoading ? "加载中..." : "暂无数据"}</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -406,57 +498,22 @@ export default function ProductionOrdersPage() {
 
         {/* 新建/编辑表单对话框 */}
         <DraggableDialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
-          <DraggableDialogContent>
+          <DraggableDialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>{isEditing ? "编辑生产指令" : "新建生产指令"}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-5 py-4 max-h-[65vh] overflow-y-auto pr-1">
-              {/* 指令类型 */}
-              <div className="space-y-2">
-                <Label>指令类型 *</Label>
-                <Select value={formData.orderType} onValueChange={(v) => handleOrderTypeChange(v as OrderType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="finished">成品 — 批号格式: YYYYMMDDNN（如 2026031101）</SelectItem>
-                    <SelectItem value="semi_finished">半成品 — 批号格式: B+YYMMDD+NN（如 B26031101）</SelectItem>
-                    <SelectItem value="rework">返工 — 批号格式: F+YYMMDD+NN（如 F26031101）</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
 
-              {/* 成品指令：关联生产计划 */}
-              {!isEditing && formData.orderType === "finished" && (
+              {/* 第一行：指令类型 + 批次号 + 状态 + 关联生产计划 */}
+              <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
-                  <Label>关联生产计划（选择后自动带入产品信息）</Label>
-                  <Select value={formData.planId ? String(formData.planId) : ""} onValueChange={handlePlanChange}>
-                    <SelectTrigger><SelectValue placeholder="选择生产计划（可选）..." /></SelectTrigger>
+                  <Label>指令类型 *</Label>
+                  <Select value={formData.orderType} onValueChange={(v) => handleOrderTypeChange(v as OrderType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {availablePlans.map((plan: any) => (
-                        <SelectItem key={plan.id} value={String(plan.id)}>
-                          {plan.planNo} - {plan.productName || "未知产品"} ({plan.plannedQty} {plan.unit})
-                          {plan.salesOrderNo ? ` [${plan.salesOrderNo}]` : " [内部计划]"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>产品 *</Label>
-                  <Select
-                    value={formData.productId ? String(formData.productId) : ""}
-                    onValueChange={(v) => {
-                      const product = (productsData as any[]).find((p: any) => p.id === Number(v));
-                      setFormData({ ...formData, productId: Number(v), unit: product?.unit || formData.unit });
-                    }}
-                  >
-                    <SelectTrigger><SelectValue placeholder="选择产品" /></SelectTrigger>
-                    <SelectContent>
-                      {(productsData as any[]).map((p: any) => (
-                        <SelectItem key={p.id} value={String(p.id)}>{p.name} ({p.code})</SelectItem>
-                      ))}
+                      <SelectItem value="finished">成品</SelectItem>
+                      <SelectItem value="semi_finished">半成品</SelectItem>
+                      <SelectItem value="rework">返工</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -468,27 +525,6 @@ export default function ProductionOrdersPage() {
                     placeholder="批次号"
                     className="font-mono"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {formData.orderType === "finished" && "成品格式: YYYYMMDDNN"}
-                    {formData.orderType === "semi_finished" && "半成品格式: B+YYMMDD+NN"}
-                    {formData.orderType === "rework" && "返工格式: F+YYMMDD+NN"}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>计划数量 *</Label>
-                  <Input type="number" value={formData.plannedQty} onChange={(e) => setFormData({ ...formData, plannedQty: e.target.value })} placeholder="输入计划生产数量" />
-                </div>
-                <div className="space-y-2">
-                  <Label>单位</Label>
-                  <Input value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} placeholder="如: 个、箱" />
-                </div>
-                <div className="space-y-2">
-                  <Label>计划开始日期</Label>
-                  <Input type="date" value={formData.plannedStartDate} onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label>计划完成日期</Label>
-                  <Input type="date" value={formData.plannedEndDate} onChange={(e) => setFormData({ ...formData, plannedEndDate: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <Label>状态</Label>
@@ -503,12 +539,119 @@ export default function ProductionOrdersPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                {/* 关联生产计划（仅成品类型且新建时显示） */}
+                {!isEditing && formData.orderType === "finished" ? (
+                  <div className="space-y-2">
+                    <Label>关联生产计划</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-start font-normal text-sm"
+                      onClick={() => setPlanPickerOpen(true)}
+                    >
+                      {formData.planId ? (
+                        <span className="flex items-center gap-1">
+                          <span className="text-green-600">✓</span>
+                          <span className="font-mono text-xs">{formData.planNo}</span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">点击选择计划...</span>
+                      )}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>计划开始日期</Label>
+                    <Input type="date" value={formData.plannedStartDate} onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })} />
+                  </div>
+                )}
+              </div>
+
+              {/* 第二行：产品名称（弹窗选择） */}
+              <div className="space-y-2">
+                <Label>产品名称 *</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start font-normal"
+                  onClick={() => setProductPickerOpen(true)}
+                >
+                  {formData.productId ? (
+                    <span className="flex items-center gap-2">
+                      <span className="text-green-600">✓</span>
+                      <span className="font-mono text-xs text-muted-foreground">{formData.productCode}</span>
+                      <span className="font-medium">{formData.productName}</span>
+                      {formData.productSpec && <span className="text-muted-foreground text-xs">· {formData.productSpec}</span>}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">点击选择产品...</span>
+                  )}
+                </Button>
+              </div>
+
+              {/* 产品信息展示（只读） */}
+              {formData.productId > 0 && (formData.productSpec || formData.productDescription) && (
+                <div className="rounded-md bg-muted/50 p-3 grid grid-cols-2 gap-2 text-sm">
+                  {formData.productSpec && (
+                    <div><span className="text-muted-foreground">规格型号：</span><span>{formData.productSpec}</span></div>
+                  )}
+                  {formData.productDescription && (
+                    <div className="col-span-2"><span className="text-muted-foreground">产品描述：</span><span>{formData.productDescription}</span></div>
+                  )}
+                </div>
+              )}
+
+              {/* 第三行：计划数量 + 单位 + 计划开始 + 计划完成 */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>计划数量 *</Label>
+                  <Input type="number" value={formData.plannedQty} onChange={(e) => setFormData({ ...formData, plannedQty: e.target.value })} placeholder="数量" />
+                </div>
+                <div className="space-y-2">
+                  <Label>单位</Label>
+                  <Input value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} placeholder="个/套/件" />
+                </div>
+                <div className="space-y-2">
+                  <Label>计划开始日期</Label>
+                  <Input type="date" value={formData.plannedStartDate} onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>计划完成日期</Label>
+                  <Input type="date" value={formData.plannedEndDate} onChange={(e) => setFormData({ ...formData, plannedEndDate: e.target.value })} />
+                </div>
+              </div>
+
+              {/* 第四行：生产日期 + 有效期至 */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>生产日期</Label>
+                  <Input
+                    type="date"
+                    value={formData.productionDate}
+                    onChange={(e) => handleProductionDateChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>有效期至</Label>
+                  <Input
+                    type="date"
+                    value={formData.expiryDate}
+                    onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                    placeholder="根据保质期自动计算"
+                  />
+                  {formData.productId > 0 && (() => {
+                    const product = (productsData as any[]).find((p: any) => p.id === formData.productId);
+                    return product?.shelfLife ? (
+                      <p className="text-xs text-muted-foreground">保质期 {product.shelfLife} 个月，自动计算</p>
+                    ) : null;
+                  })()}
+                </div>
               </div>
 
               <Separator />
               <div className="space-y-2">
                 <Label>备注</Label>
-                <Textarea value={formData.remark} onChange={(e) => setFormData({ ...formData, remark: e.target.value })} placeholder="输入备注信息" rows={3} />
+                <Textarea value={formData.remark} onChange={(e) => setFormData({ ...formData, remark: e.target.value })} placeholder="输入备注信息" rows={2} />
               </div>
             </div>
             <DialogFooter>
@@ -517,6 +660,53 @@ export default function ProductionOrdersPage() {
             </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>
+
+        {/* 关联生产计划弹窗选择器 */}
+        <EntityPickerDialog
+          open={planPickerOpen}
+          onOpenChange={setPlanPickerOpen}
+          title="选择生产计划"
+          searchPlaceholder="搜索计划编号、产品名称..."
+          columns={[
+            { key: "planNo", title: "计划编号", render: (p) => <span className="font-mono font-medium">{p.planNo}</span> },
+            { key: "productName", title: "产品名称", render: (p) => <span className="font-medium">{p.productName || "-"}</span> },
+            { key: "plannedQty", title: "计划数量", render: (p) => <span>{p.plannedQty} {p.unit}</span> },
+            { key: "plannedEndDate", title: "交期", render: (p) => <span>{p.plannedEndDate ? String(p.plannedEndDate).split("T")[0] : "-"}</span> },
+            { key: "salesOrderNo", title: "销售订单", render: (p) => <span className="text-muted-foreground">{p.salesOrderNo || "内部计划"}</span> },
+          ]}
+          rows={availablePlans}
+          selectedId={formData.planId ? String(formData.planId) : ""}
+          filterFn={(p, q) => {
+            const lower = q.toLowerCase();
+            return String(p.planNo || "").toLowerCase().includes(lower) ||
+              String(p.productName || "").toLowerCase().includes(lower);
+          }}
+          onSelect={handlePlanSelect}
+        />
+
+        {/* 产品选择弹窗 */}
+        <EntityPickerDialog
+          open={productPickerOpen}
+          onOpenChange={setProductPickerOpen}
+          title="选择产品"
+          searchPlaceholder="搜索产品编码、名称、规格..."
+          columns={[
+            { key: "code", title: "产品编码", render: (p) => <span className="font-mono font-medium">{p.code}</span> },
+            { key: "name", title: "产品名称", render: (p) => <span className="font-medium">{p.name}</span> },
+            { key: "specification", title: "规格型号", render: (p) => <span className="text-muted-foreground">{p.specification || "-"}</span> },
+            { key: "unit", title: "单位" },
+            { key: "shelfLife", title: "保质期", render: (p) => <span>{p.shelfLife ? `${p.shelfLife}个月` : "-"}</span> },
+          ]}
+          rows={(productsData as any[]).filter((p: any) => p.status === "active")}
+          selectedId={formData.productId ? String(formData.productId) : ""}
+          filterFn={(p, q) => {
+            const lower = q.toLowerCase();
+            return String(p.code || "").toLowerCase().includes(lower) ||
+              String(p.name || "").toLowerCase().includes(lower) ||
+              String(p.specification || "").toLowerCase().includes(lower);
+          }}
+          onSelect={handleProductSelect}
+        />
 
         {/* 查看详情对话框 */}
         <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
@@ -532,6 +722,7 @@ export default function ProductionOrdersPage() {
               const completed = Number(selectedRecord.completedQty || 0);
               const progress = planned > 0 ? (completed / planned) * 100 : 0;
               const typeInfo = orderTypeMap[selectedRecord.orderType] || orderTypeMap.finished;
+              const product = (productsData as any[]).find((p: any) => p.id === selectedRecord.productId);
               return (
                 <div className="space-y-6 mt-4">
                   <Card className="bg-primary/5 border-primary/20">
@@ -556,9 +747,15 @@ export default function ProductionOrdersPage() {
                           <Badge variant={typeInfo.badge} className={typeInfo.color}>{typeInfo.label}</Badge>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">产品</span>
+                          <span className="text-muted-foreground">产品名称</span>
                           <span className="font-medium">{selectedRecord.productName}</span>
                         </div>
+                        {product?.specification && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">规格型号</span>
+                            <span>{product.specification}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">批次号</span>
                           <span className="font-medium font-mono">{selectedRecord.batchNo || "-"}</span>
@@ -576,6 +773,14 @@ export default function ProductionOrdersPage() {
                     <Card>
                       <CardHeader className="pb-3"><CardTitle className="text-base">时间信息</CardTitle></CardHeader>
                       <CardContent className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">生产日期</span>
+                          <span className="font-medium">{selectedRecord.productionDate ? String(selectedRecord.productionDate).split("T")[0] : "-"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">有效期至</span>
+                          <span className="font-medium">{selectedRecord.expiryDate ? String(selectedRecord.expiryDate).split("T")[0] : "-"}</span>
+                        </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">计划开始</span>
                           <span className="font-medium">{selectedRecord.plannedStartDate ? String(selectedRecord.plannedStartDate).split("T")[0] : "-"}</span>

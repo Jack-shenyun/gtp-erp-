@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,8 +19,9 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import {
-  PackageOpen, Plus, Search, MoreHorizontal, Edit, Trash2, Eye, CheckCircle, XCircle, Truck,
+  PackageOpen, Plus, Search, MoreHorizontal, Edit, Trash2, Eye, CheckCircle, XCircle, Truck, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
@@ -35,6 +37,7 @@ const statusMap: Record<string, { label: string; variant: "outline" | "default" 
 interface MaterialItem {
   materialCode: string;
   materialName: string;
+  specification: string;
   requiredQty: number;
   unit: string;
   actualQty: number;
@@ -46,6 +49,7 @@ export default function MaterialRequisitionPage() {
   const { data: orders = [], isLoading, refetch } = trpc.materialRequisitionOrders.list.useQuery({});
   const { data: productionOrders = [] } = trpc.productionOrders.list.useQuery({});
   const { data: warehouseList = [] } = trpc.warehouses.list.useQuery({});
+  const { data: productsData = [] } = trpc.products.list.useQuery();
 
   const createMutation = trpc.materialRequisitionOrders.create.useMutation({
     onSuccess: () => { refetch(); toast.success("领料单已创建"); setDialogOpen(false); },
@@ -66,14 +70,30 @@ export default function MaterialRequisitionPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [viewingOrder, setViewingOrder] = useState<any>(null);
-  const [items, setItems] = useState<MaterialItem[]>([
-    { materialCode: "", materialName: "", requiredQty: 0, unit: "件", actualQty: 0, remark: "" },
-  ]);
+  const [items, setItems] = useState<MaterialItem[]>([]);
+
+  // 弹窗选择器状态
+  const [orderPickerOpen, setOrderPickerOpen] = useState(false);
+
+  // 当前选中的生产任务对应的 productId（用于查询 BOM）
+  const [selectedProductId, setSelectedProductId] = useState<number>(0);
+
+  // 查询选中产品的 BOM 物料明细
+  const { data: bomItems = [], refetch: refetchBom } = trpc.bom.getByProductId.useQuery(
+    { productId: selectedProductId },
+    { enabled: selectedProductId > 0 }
+  );
 
   const [formData, setFormData] = useState({
     requisitionNo: "",
     productionOrderId: "",
     productionOrderNo: "",
+    productName: "",
+    productSpec: "",
+    productDescription: "",
+    batchNo: "",
+    plannedQty: "",
+    unit: "",
     warehouseId: "",
     applicationDate: "",
     remark: "",
@@ -94,11 +114,18 @@ export default function MaterialRequisitionPage() {
 
   const handleAdd = () => {
     setEditingOrder(null);
-    setItems([{ materialCode: "", materialName: "", requiredQty: 0, unit: "件", actualQty: 0, remark: "" }]);
+    setSelectedProductId(0);
+    setItems([]);
     setFormData({
       requisitionNo: genNo(),
       productionOrderId: "",
       productionOrderNo: "",
+      productName: "",
+      productSpec: "",
+      productDescription: "",
+      batchNo: "",
+      plannedQty: "",
+      unit: "",
       warehouseId: "",
       applicationDate: new Date().toISOString().split("T")[0],
       remark: "",
@@ -113,11 +140,18 @@ export default function MaterialRequisitionPage() {
       const extra = JSON.parse(order.remark || "{}");
       parsedItems = extra.items || [];
     } catch {}
-    setItems(parsedItems.length > 0 ? parsedItems : [{ materialCode: "", materialName: "", requiredQty: 0, unit: "件", actualQty: 0, remark: "" }]);
+    setItems(parsedItems.length > 0 ? parsedItems : []);
+    setSelectedProductId(0);
     setFormData({
       requisitionNo: order.requisitionNo,
       productionOrderId: order.productionOrderId ? String(order.productionOrderId) : "",
       productionOrderNo: order.productionOrderNo || "",
+      productName: "",
+      productSpec: "",
+      productDescription: "",
+      batchNo: "",
+      plannedQty: "",
+      unit: "",
       warehouseId: order.warehouseId ? String(order.warehouseId) : "",
       applicationDate: order.applicationDate ? String(order.applicationDate).split("T")[0] : "",
       remark: "",
@@ -144,13 +178,54 @@ export default function MaterialRequisitionPage() {
     toast.success("已发料");
   };
 
-  const handleProductionOrderChange = (poId: string) => {
-    const po = (productionOrders as any[]).find((p) => String(p.id) === poId);
-    setFormData((f) => ({ ...f, productionOrderId: poId, productionOrderNo: po?.orderNo || "" }));
+  // 选择生产任务后自动带入产品信息
+  const handleProductionOrderSelect = (po: any) => {
+    const product = (productsData as any[]).find((p: any) => p.id === po.productId);
+    const newProductId = po.productId || 0;
+    setFormData((f) => ({
+      ...f,
+      productionOrderId: String(po.id),
+      productionOrderNo: po.orderNo || "",
+      productName: product?.name || po.productName || "",
+      productSpec: product?.specification || "",
+      productDescription: product?.description || "",
+      batchNo: po.batchNo || "",
+      plannedQty: po.plannedQty || "",
+      unit: po.unit || product?.unit || "",
+    }));
+    setSelectedProductId(newProductId);
+    setOrderPickerOpen(false);
+    // 延迟一下再提示，等 BOM 查询触发
+    setTimeout(() => {
+      if (newProductId > 0) {
+        toast.info("正在根据 BOM 自动带出物料明细...");
+      }
+    }, 300);
+  };
+
+  // 当 BOM 数据加载完成时，自动填充物料明细
+  const handleLoadBomItems = () => {
+    if ((bomItems as any[]).length === 0) {
+      toast.warning("该产品暂无 BOM 数据，请手动添加物料");
+      return;
+    }
+    // 只取 level=2 的物料（二级组件/半成品）和 level=3 的原材料
+    const rawMaterials = (bomItems as any[]).filter((b: any) => b.level === 3 || b.level === 2);
+    const newItems: MaterialItem[] = rawMaterials.map((b: any) => ({
+      materialCode: b.materialCode || "",
+      materialName: b.materialName || "",
+      specification: b.specification || "",
+      requiredQty: Number(b.quantity) || 0,
+      unit: b.unit || "",
+      actualQty: 0,
+      remark: "",
+    }));
+    setItems(newItems);
+    toast.success(`已从 BOM 带出 ${newItems.length} 条物料明细`);
   };
 
   const addItem = () => {
-    setItems([...items, { materialCode: "", materialName: "", requiredQty: 0, unit: "件", actualQty: 0, remark: "" }]);
+    setItems([...items, { materialCode: "", materialName: "", specification: "", requiredQty: 0, unit: "件", actualQty: 0, remark: "" }]);
   };
 
   const removeItem = (idx: number) => {
@@ -193,6 +268,12 @@ export default function MaterialRequisitionPage() {
   const draftCount = (orders as any[]).filter((o) => o.status === "draft").length;
   const pendingCount = (orders as any[]).filter((o) => o.status === "pending").length;
   const issuedCount = (orders as any[]).filter((o) => o.status === "issued").length;
+
+  // 生产任务列表（用于弹窗选择）
+  const availableOrders = (productionOrders as any[]).map((po: any) => {
+    const product = (productsData as any[]).find((p: any) => p.id === po.productId);
+    return { ...po, productName: product?.name || "-", productSpec: product?.specification || "" };
+  });
 
   return (
     <ERPLayout>
@@ -245,6 +326,7 @@ export default function MaterialRequisitionPage() {
                 <TableRow>
                   <TableHead>领料单号</TableHead>
                   <TableHead>关联生产任务</TableHead>
+                  <TableHead>产品名称</TableHead>
                   <TableHead>申请日期</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead className="text-right">操作</TableHead>
@@ -252,55 +334,60 @@ export default function MaterialRequisitionPage() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
                 ) : filteredOrders.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">暂无领料单</TableCell></TableRow>
-                ) : filteredOrders.map((order: any) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-medium">{order.requisitionNo}</TableCell>
-                    <TableCell>{order.productionOrderNo || "-"}</TableCell>
-                    <TableCell>{order.applicationDate ? String(order.applicationDate).split("T")[0] : "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[order.status]?.variant || "outline"}>
-                        {statusMap[order.status]?.label || order.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleView(order)}><Eye className="h-4 w-4 mr-2" />查看详情</DropdownMenuItem>
-                          {order.status === "draft" && (
-                            <>
-                              <DropdownMenuItem onClick={() => handleEdit(order)}><Edit className="h-4 w-4 mr-2" />编辑</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, data: { status: "pending" } })}>
-                                <CheckCircle className="h-4 w-4 mr-2" />提交审批
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">暂无领料单</TableCell></TableRow>
+                ) : filteredOrders.map((order: any) => {
+                  const po = (productionOrders as any[]).find((p: any) => p.id === order.productionOrderId);
+                  const product = po ? (productsData as any[]).find((p: any) => p.id === po.productId) : null;
+                  return (
+                    <TableRow key={order.id}>
+                      <TableCell className="font-medium font-mono">{order.requisitionNo}</TableCell>
+                      <TableCell className="font-mono">{order.productionOrderNo || "-"}</TableCell>
+                      <TableCell>{product?.name || "-"}</TableCell>
+                      <TableCell>{order.applicationDate ? String(order.applicationDate).split("T")[0] : "-"}</TableCell>
+                      <TableCell>
+                        <Badge variant={statusMap[order.status]?.variant || "outline"}>
+                          {statusMap[order.status]?.label || order.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleView(order)}><Eye className="h-4 w-4 mr-2" />查看详情</DropdownMenuItem>
+                            {order.status === "draft" && (
+                              <>
+                                <DropdownMenuItem onClick={() => handleEdit(order)}><Edit className="h-4 w-4 mr-2" />编辑</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, data: { status: "pending" } })}>
+                                  <CheckCircle className="h-4 w-4 mr-2" />提交审批
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {order.status === "pending" && (
+                              <>
+                                <DropdownMenuItem onClick={() => handleApprove(order)}><CheckCircle className="h-4 w-4 mr-2" />审批通过</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, data: { status: "rejected" } })} className="text-destructive">
+                                  <XCircle className="h-4 w-4 mr-2" />拒绝
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {order.status === "approved" && (
+                              <DropdownMenuItem onClick={() => handleIssue(order)}><Truck className="h-4 w-4 mr-2" />确认发料</DropdownMenuItem>
+                            )}
+                            {canDelete && (
+                              <DropdownMenuItem onClick={() => handleDelete(order)} className="text-destructive">
+                                <Trash2 className="h-4 w-4 mr-2" />删除
                               </DropdownMenuItem>
-                            </>
-                          )}
-                          {order.status === "pending" && (
-                            <>
-                              <DropdownMenuItem onClick={() => handleApprove(order)}><CheckCircle className="h-4 w-4 mr-2" />审批通过</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, data: { status: "rejected" } })} className="text-destructive">
-                                <XCircle className="h-4 w-4 mr-2" />拒绝
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          {order.status === "approved" && (
-                            <DropdownMenuItem onClick={() => handleIssue(order)}><Truck className="h-4 w-4 mr-2" />确认发料</DropdownMenuItem>
-                          )}
-                          {canDelete && (
-                            <DropdownMenuItem onClick={() => handleDelete(order)} className="text-destructive">
-                              <Trash2 className="h-4 w-4 mr-2" />删除
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -308,37 +395,27 @@ export default function MaterialRequisitionPage() {
 
         {/* 新建/编辑对话框 */}
         <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent className="max-w-3xl">
+          <DraggableDialogContent className="max-w-4xl">
             <DialogHeader>
               <DialogTitle>{editingOrder ? "编辑领料单" : "新建领料单"}</DialogTitle>
               <DialogDescription>填写领料申请信息及物料明细</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-1">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
+
+              {/* 第一行：领料单号 + 申请日期 + 领料仓库 + 状态 */}
+              <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>领料单号 *</Label>
-                  <Input value={formData.requisitionNo} onChange={(e) => setFormData({ ...formData, requisitionNo: e.target.value })} readOnly={!!editingOrder} />
+                  <Input
+                    value={formData.requisitionNo}
+                    onChange={(e) => setFormData({ ...formData, requisitionNo: e.target.value })}
+                    readOnly={!!editingOrder}
+                    className="font-mono"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>申请日期</Label>
                   <Input type="date" value={formData.applicationDate} onChange={(e) => setFormData({ ...formData, applicationDate: e.target.value })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>关联生产任务</Label>
-                  <Select
-                    value={formData.productionOrderId || "__NONE__"}
-                    onValueChange={(v) => handleProductionOrderChange(v === "__NONE__" ? "" : v)}
-                  >
-                    <SelectTrigger><SelectValue placeholder="选择生产任务" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__NONE__">不关联</SelectItem>
-                      {(productionOrders as any[]).map((po: any) => (
-                        <SelectItem key={po.id} value={String(po.id)}>{po.orderNo}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>领料仓库</Label>
@@ -351,50 +428,132 @@ export default function MaterialRequisitionPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label>计划数量</Label>
+                  <Input
+                    value={formData.plannedQty}
+                    onChange={(e) => setFormData({ ...formData, plannedQty: e.target.value })}
+                    placeholder="自动带入"
+                  />
+                </div>
               </div>
+
+              {/* 第二行：关联生产任务（弹窗选择） */}
+              <div className="space-y-2">
+                <Label>关联生产任务</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start font-normal"
+                  onClick={() => setOrderPickerOpen(true)}
+                >
+                  {formData.productionOrderId ? (
+                    <span className="flex items-center gap-2">
+                      <span className="text-green-600">✓</span>
+                      <span className="font-mono text-xs text-muted-foreground">{formData.productionOrderNo}</span>
+                      {formData.productName && <span className="font-medium">{formData.productName}</span>}
+                      {formData.batchNo && <span className="text-muted-foreground text-xs">批次: {formData.batchNo}</span>}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">点击选择生产任务...</span>
+                  )}
+                </Button>
+              </div>
+
+              {/* 产品信息展示（只读，选择生产任务后自动带入） */}
+              {formData.productionOrderId && (formData.productName || formData.productSpec) && (
+                <div className="rounded-md bg-muted/50 p-3 grid grid-cols-4 gap-3 text-sm">
+                  {formData.productName && (
+                    <div><span className="text-muted-foreground text-xs">产品名称</span><p className="font-medium">{formData.productName}</p></div>
+                  )}
+                  {formData.productSpec && (
+                    <div><span className="text-muted-foreground text-xs">规格型号</span><p>{formData.productSpec}</p></div>
+                  )}
+                  {formData.batchNo && (
+                    <div><span className="text-muted-foreground text-xs">生产批号</span><p className="font-mono">{formData.batchNo}</p></div>
+                  )}
+                  {formData.unit && (
+                    <div><span className="text-muted-foreground text-xs">单位</span><p>{formData.unit}</p></div>
+                  )}
+                  {formData.productDescription && (
+                    <div className="col-span-4"><span className="text-muted-foreground text-xs">产品描述</span><p>{formData.productDescription}</p></div>
+                  )}
+                </div>
+              )}
+
+              <Separator />
 
               {/* 物料明细 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>物料明细</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addItem}><Plus className="h-3 w-3 mr-1" />添加物料</Button>
+                  <div className="flex gap-2">
+                    {selectedProductId > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleLoadBomItems}
+                        className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        从 BOM 带出物料
+                      </Button>
+                    )}
+                    <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                      <Plus className="h-3 w-3 mr-1" />手动添加
+                    </Button>
+                  </div>
                 </div>
-                <div className="border rounded-md overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>物料编码</TableHead>
-                        <TableHead>物料名称</TableHead>
-                        <TableHead>需求数量</TableHead>
-                        <TableHead>单位</TableHead>
-                        <TableHead className="w-[60px]">操作</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((item, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>
-                            <Input value={item.materialCode} onChange={(e) => updateItem(idx, "materialCode", e.target.value)} placeholder="编码" className="h-8" />
-                          </TableCell>
-                          <TableCell>
-                            <Input value={item.materialName} onChange={(e) => updateItem(idx, "materialName", e.target.value)} placeholder="名称" className="h-8" />
-                          </TableCell>
-                          <TableCell>
-                            <Input type="number" value={item.requiredQty} onChange={(e) => updateItem(idx, "requiredQty", Number(e.target.value))} className="h-8 w-20" />
-                          </TableCell>
-                          <TableCell>
-                            <Input value={item.unit} onChange={(e) => updateItem(idx, "unit", e.target.value)} className="h-8 w-16" />
-                          </TableCell>
-                          <TableCell>
-                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeItem(idx)}>
-                              <Trash2 className="h-3 w-3 text-destructive" />
-                            </Button>
-                          </TableCell>
+
+                {items.length === 0 ? (
+                  <div className="border rounded-md p-6 text-center text-sm text-muted-foreground">
+                    {selectedProductId > 0
+                      ? "点击「从 BOM 带出物料」自动填充，或手动添加物料"
+                      : "请先选择关联生产任务，系统将根据 BOM 自动带出物料明细"}
+                  </div>
+                ) : (
+                  <div className="border rounded-md overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>物料编码</TableHead>
+                          <TableHead>物料名称</TableHead>
+                          <TableHead>规格</TableHead>
+                          <TableHead>需求数量</TableHead>
+                          <TableHead>单位</TableHead>
+                          <TableHead className="w-[60px]">操作</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((item, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell>
+                              <Input value={item.materialCode} onChange={(e) => updateItem(idx, "materialCode", e.target.value)} placeholder="编码" className="h-8 font-mono" />
+                            </TableCell>
+                            <TableCell>
+                              <Input value={item.materialName} onChange={(e) => updateItem(idx, "materialName", e.target.value)} placeholder="名称" className="h-8" />
+                            </TableCell>
+                            <TableCell>
+                              <Input value={item.specification} onChange={(e) => updateItem(idx, "specification", e.target.value)} placeholder="规格" className="h-8" />
+                            </TableCell>
+                            <TableCell>
+                              <Input type="number" value={item.requiredQty} onChange={(e) => updateItem(idx, "requiredQty", Number(e.target.value))} className="h-8 w-20" />
+                            </TableCell>
+                            <TableCell>
+                              <Input value={item.unit} onChange={(e) => updateItem(idx, "unit", e.target.value)} className="h-8 w-16" />
+                            </TableCell>
+                            <TableCell>
+                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeItem(idx)}>
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -411,6 +570,34 @@ export default function MaterialRequisitionPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
+        {/* 关联生产任务弹窗选择器 */}
+        <EntityPickerDialog
+          open={orderPickerOpen}
+          onOpenChange={setOrderPickerOpen}
+          title="选择生产任务"
+          searchPlaceholder="搜索指令单号、批次号、产品名称..."
+          columns={[
+            { key: "orderNo", title: "指令单号", render: (po) => <span className="font-mono font-medium">{po.orderNo}</span> },
+            { key: "productName", title: "产品名称", render: (po) => <span className="font-medium">{po.productName}</span> },
+            { key: "productSpec", title: "规格型号", render: (po) => <span className="text-muted-foreground">{po.productSpec || "-"}</span> },
+            { key: "batchNo", title: "生产批号", render: (po) => <span className="font-mono">{po.batchNo || "-"}</span> },
+            { key: "plannedQty", title: "计划数量", render: (po) => <span>{po.plannedQty} {po.unit}</span> },
+            { key: "status", title: "状态", render: (po) => {
+              const statusLabels: Record<string, string> = { draft: "草稿", planned: "已计划", in_progress: "生产中", completed: "已完成", cancelled: "已取消" };
+              return <span>{statusLabels[po.status] || po.status}</span>;
+            }},
+          ]}
+          rows={availableOrders}
+          selectedId={formData.productionOrderId ? String(formData.productionOrderId) : ""}
+          filterFn={(po, q) => {
+            const lower = q.toLowerCase();
+            return String(po.orderNo || "").toLowerCase().includes(lower) ||
+              String(po.productName || "").toLowerCase().includes(lower) ||
+              String(po.batchNo || "").toLowerCase().includes(lower);
+          }}
+          onSelect={handleProductionOrderSelect}
+        />
+
         {/* 查看详情 */}
         <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
           <DraggableDialogContent className="max-w-2xl">
@@ -422,7 +609,7 @@ export default function MaterialRequisitionPage() {
               <div className="space-y-4 py-2">
                 <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                   <div>
-                    <p className="font-semibold">{viewingOrder.requisitionNo}</p>
+                    <p className="font-semibold font-mono">{viewingOrder.requisitionNo}</p>
                     <p className="text-sm text-muted-foreground">关联任务：{viewingOrder.productionOrderNo || "-"}</p>
                   </div>
                   <Badge variant={statusMap[viewingOrder.status]?.variant || "outline"}>
@@ -434,12 +621,13 @@ export default function MaterialRequisitionPage() {
                 </div>
                 {getViewItems(viewingOrder).length > 0 && (
                   <div>
-                    <p className="text-sm font-medium mb-2">物料明细</p>
+                    <p className="text-sm font-medium mb-2">物料明细（{getViewItems(viewingOrder).length} 项）</p>
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>物料编码</TableHead>
                           <TableHead>物料名称</TableHead>
+                          <TableHead>规格</TableHead>
                           <TableHead className="text-right">需求数量</TableHead>
                           <TableHead>单位</TableHead>
                         </TableRow>
@@ -447,8 +635,9 @@ export default function MaterialRequisitionPage() {
                       <TableBody>
                         {getViewItems(viewingOrder).map((item, idx) => (
                           <TableRow key={idx}>
-                            <TableCell>{item.materialCode}</TableCell>
+                            <TableCell className="font-mono">{item.materialCode}</TableCell>
                             <TableCell>{item.materialName}</TableCell>
+                            <TableCell className="text-muted-foreground">{item.specification || "-"}</TableCell>
                             <TableCell className="text-right">{item.requiredQty}</TableCell>
                             <TableCell>{item.unit}</TableCell>
                           </TableRow>

@@ -2,6 +2,7 @@ import { formatDateValue } from "@/lib/formatters";
 import { useState, useMemo, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,16 +43,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ==================== 类型定义 ====================
@@ -620,6 +612,18 @@ function CreateBOMDialog({
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [productPickerSearch, setProductPickerSearch] = useState("");
   const [version, setVersion] = useState("V1.0");
+  const [bomCode, setBomCode] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState("");
+
+  // 自动生成 BOM 编号
+  const generateBomCode = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    const rand = String(Math.floor(Math.random() * 1000)).padStart(3, "0");
+    return `BOM-${y}${m}${d}-${rand}`;
+  };
   const [level2Items, setLevel2Items] = useState<BomLevel2Item[]>([]);
   const [level3DialogOpen, setLevel3DialogOpen] = useState(false);
   const [editingLevel2, setEditingLevel2] = useState<BomLevel2Item | null>(null);
@@ -633,6 +637,8 @@ function CreateBOMDialog({
     if (open) {
       setSelectedProductId("");
       setVersion("V1.0");
+      setBomCode(generateBomCode());
+      setEffectiveDate("");
       setLevel2Items([]);
       setEditingLevel2(null);
       setSemiSearch("");
@@ -726,6 +732,8 @@ function CreateBOMDialog({
     batchCreate.mutate({
       productId: Number(selectedProductId),
       version: version.trim(),
+      bomCode: bomCode.trim() || undefined,
+      effectiveDate: effectiveDate || undefined,
       items: level2Items.map((item) => ({
         level: 2,
         materialCode: item.materialCode,
@@ -769,143 +777,71 @@ function CreateBOMDialog({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 第一行：4个字段 */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* 选择成品产品 */}
                 <div>
-                  <Label>选择成品产品 *</Label>
+                  <Label>产品名称 *</Label>
                   <Button
                     variant="outline"
-                    className="mt-1 w-full justify-between font-normal"
+                    className="mt-1 w-full justify-start font-normal truncate"
                     onClick={() => setProductPickerOpen(true)}
                   >
-                    {selectedProductId
-                      ? (() => {
-                          const p = finishedProducts.find((p: any) => String(p.id) === selectedProductId);
-                          return p ? (
-                            <span className="flex items-center gap-2">
-                              <Check className="h-4 w-4 text-green-600" />
-                              <span className="font-mono">{p.code}</span>
-                              <span className="text-muted-foreground">{p.name}</span>
-                            </span>
-                          ) : "请选择产品...";
-                        })()
-                      : <span className="text-muted-foreground">点击选择产品...</span>}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    {selectedProductId ? (() => {
+                      const p = finishedProducts.find((p: any) => String(p.id) === selectedProductId);
+                      return p ? (
+                        <span className="flex items-center gap-1 truncate">
+                          <Check className="h-3 w-3 text-green-600 shrink-0" />
+                          <span className="font-mono text-xs shrink-0">{p.code}</span>
+                          <span className="truncate">{p.name}</span>
+                        </span>
+                      ) : "请选择产品...";
+                    })() : <span className="text-muted-foreground">点击选择产品...</span>}
                   </Button>
-
-                  {/* 产品选择弹窗 */}
-                  <DraggableDialog open={productPickerOpen} onOpenChange={setProductPickerOpen}>
-                    <DraggableDialogContent className="max-w-3xl">
-                      <DialogHeader>
-                        <DialogTitle>选择产品</DialogTitle>
-                      </DialogHeader>
-                      <div className="flex flex-col gap-3">
-                        {/* 搜索框 */}
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            className="pl-9"
-                            placeholder="搜索产品编码、名称、规格型号..."
-                            value={productPickerSearch}
-                            onChange={(e) => setProductPickerSearch(e.target.value)}
-                          />
-                        </div>
-                        {/* 表格 */}
-                        <div className="border rounded-lg overflow-hidden">
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="bg-muted/50">
-                                <TableHead>产品编码</TableHead>
-                                <TableHead>产品名称</TableHead>
-                                <TableHead>规格型号</TableHead>
-                                <TableHead>单位</TableHead>
-                                <TableHead>产品属性</TableHead>
-                                <TableHead className="text-right">操作</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {finishedProducts
-                                .filter((p: any) => {
-                                  if (!productPickerSearch.trim()) return true;
-                                  const q = productPickerSearch.toLowerCase();
-                                  return (
-                                    p.code?.toLowerCase().includes(q) ||
-                                    p.name?.toLowerCase().includes(q) ||
-                                    p.specification?.toLowerCase().includes(q)
-                                  );
-                                })
-                                .map((p: any) => (
-                                  <TableRow
-                                    key={p.id}
-                                    className={cn(
-                                      "cursor-pointer hover:bg-muted/50 transition-colors",
-                                      selectedProductId === String(p.id) && "bg-blue-50"
-                                    )}
-                                    onClick={() => {
-                                      setSelectedProductId(String(p.id));
-                                      setProductPickerOpen(false);
-                                      setProductPickerSearch("");
-                                    }}
-                                  >
-                                    <TableCell className="font-mono font-medium">{p.code}</TableCell>
-                                    <TableCell className="font-medium">{p.name}</TableCell>
-                                    <TableCell className="text-muted-foreground">{p.specification || "-"}</TableCell>
-                                    <TableCell>{p.unit || "-"}</TableCell>
-                                    <TableCell>
-                                      <Badge variant="outline" className="text-xs">
-                                        {p.category || "成品"}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                      {selectedProductId === String(p.id) ? (
-                                        <Check className="h-5 w-5 text-green-600 ml-auto" />
-                                      ) : (
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedProductId(String(p.id));
-                                            setProductPickerOpen(false);
-                                            setProductPickerSearch("");
-                                          }}
-                                        >
-                                          选择
-                                        </Button>
-                                      )}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              {finishedProducts.filter((p: any) => {
-                                if (!productPickerSearch.trim()) return true;
-                                const q = productPickerSearch.toLowerCase();
-                                return (
-                                  p.code?.toLowerCase().includes(q) ||
-                                  p.name?.toLowerCase().includes(q) ||
-                                  p.specification?.toLowerCase().includes(q)
-                                );
-                              }).length === 0 && (
-                                <TableRow>
-                                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                                    未找到匹配的产品
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <div className="flex justify-end">
-                          <Button variant="outline" onClick={() => { setProductPickerOpen(false); setProductPickerSearch(""); }}>
-                            取消
-                          </Button>
-                        </div>
-                      </div>
-                    </DraggableDialogContent>
-                  </DraggableDialog>
+                  {/* 使用公共弹窗选择器 */}
+                  <EntityPickerDialog
+                    open={productPickerOpen}
+                    onOpenChange={setProductPickerOpen}
+                    title="选择产品"
+                    searchPlaceholder="搜索产品编码、名称、规格型号..."
+                    columns={[
+                      { key: "code", title: "产品编码", render: (p) => <span className="font-mono font-medium">{p.code}</span> },
+                      { key: "name", title: "产品名称", render: (p) => <span className="font-medium">{p.name}</span> },
+                      { key: "specification", title: "规格型号", render: (p) => <span className="text-muted-foreground">{p.specification || "-"}</span> },
+                      { key: "unit", title: "单位" },
+                      { key: "productCategory", title: "产品分类", render: (p) => <Badge variant="outline" className="text-xs">{productCategoryLabels[p.productCategory] || p.productCategory || "成品"}</Badge> },
+                    ]}
+                    rows={finishedProducts}
+                    selectedId={selectedProductId}
+                    filterFn={(p, q) => {
+                      const lower = q.toLowerCase();
+                      return p.code?.toLowerCase().includes(lower) || p.name?.toLowerCase().includes(lower) || p.specification?.toLowerCase().includes(lower);
+                    }}
+                    onSelect={(p) => {
+                      setSelectedProductId(String(p.id));
+                      setProductPickerOpen(false);
+                    }}
+                  />
                 </div>
+                {/* BOM 版本 */}
                 <div>
                   <Label>BOM 版本 *</Label>
                   <Input className="mt-1" value={version} onChange={(e) => setVersion(e.target.value)} placeholder="如 V1.0" />
+                </div>
+                {/* BOM 编号 */}
+                <div>
+                  <Label>BOM 编号</Label>
+                  <div className="flex gap-1 mt-1">
+                    <Input value={bomCode} onChange={(e) => setBomCode(e.target.value)} placeholder="自动生成" className="font-mono" />
+                    <Button type="button" variant="outline" size="icon" title="重新生成" onClick={() => setBomCode(generateBomCode())}>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                    </Button>
+                  </div>
+                </div>
+                {/* 生效日期 */}
+                <div>
+                  <Label>生效日期</Label>
+                  <Input type="date" className="mt-1" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
                 </div>
               </div>
 

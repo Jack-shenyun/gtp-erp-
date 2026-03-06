@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,7 @@ export default function ProductionPlanBoardPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<any>(null);
   const [viewingPlan, setViewingPlan] = useState<any>(null);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     planNo: "",
@@ -449,17 +451,45 @@ export default function ProductionPlanBoardPage() {
               )}
 
               <div className="space-y-2">
-                <Label>生产产品 *</Label>
-                <Select value={formData.productId} onValueChange={handleProductChange}>
-                  <SelectTrigger><SelectValue placeholder="选择产品" /></SelectTrigger>
-                  <SelectContent>
-                    {(products as any[]).filter((p) => p.status === "active").map((p: any) => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.code} - {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>产品名称 *</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start font-normal"
+                  onClick={() => setProductPickerOpen(true)}
+                >
+                  {formData.productId ? (
+                    <span className="flex items-center gap-2">
+                      <span className="text-green-600">✓</span>
+                      <span className="font-mono text-xs">{(products as any[]).find((p: any) => String(p.id) === formData.productId)?.code}</span>
+                      <span>{formData.productName}</span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">点击选择产品...</span>
+                  )}
+                </Button>
+                <EntityPickerDialog
+                  open={productPickerOpen}
+                  onOpenChange={setProductPickerOpen}
+                  title="选择产品"
+                  searchPlaceholder="搜索产品编码、名称、规格..."
+                  columns={[
+                    { key: "code", title: "产品编码", render: (p) => <span className="font-mono font-medium">{p.code}</span> },
+                    { key: "name", title: "产品名称", render: (p) => <span className="font-medium">{p.name}</span> },
+                    { key: "specification", title: "规格型号", render: (p) => <span className="text-muted-foreground">{p.specification || "-"}</span> },
+                    { key: "unit", title: "单位" },
+                  ]}
+                  rows={(products as any[]).filter((p: any) => p.sourceType === "production" && p.status === "active")}
+                  selectedId={formData.productId}
+                  filterFn={(p, q) => {
+                    const lower = q.toLowerCase();
+                    return p.code?.toLowerCase().includes(lower) || p.name?.toLowerCase().includes(lower) || p.specification?.toLowerCase().includes(lower);
+                  }}
+                  onSelect={(p) => {
+                    handleProductChange(String(p.id));
+                    setProductPickerOpen(false);
+                  }}
+                />
               </div>
 
               <div className="grid grid-cols-3 gap-4">

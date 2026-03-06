@@ -1300,16 +1300,21 @@ export const appRouter = router({
         batchNo: z.string().optional(),
         plannedStartDate: z.string().optional(),
         plannedEndDate: z.string().optional(),
+        productionDate: z.string().optional(),
+        expiryDate: z.string().optional(),
+        planId: z.number().optional(),
         status: z.enum(["draft", "planned", "in_progress", "completed", "cancelled"]).optional(),
         salesOrderId: z.number().optional(),
         remark: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const { plannedStartDate, plannedEndDate, ...rest } = input;
+        const { plannedStartDate, plannedEndDate, productionDate, expiryDate, ...rest } = input;
         return await createProductionOrder({
           ...rest,
           plannedStartDate: plannedStartDate ? new Date(plannedStartDate) : undefined,
           plannedEndDate: plannedEndDate ? new Date(plannedEndDate) : undefined,
+          productionDate: productionDate ? new Date(productionDate) : undefined,
+          expiryDate: expiryDate ? new Date(expiryDate) : undefined,
           createdBy: ctx.user?.id,
         });
       }),
@@ -1329,18 +1334,23 @@ export const appRouter = router({
           plannedEndDate: z.string().optional(),
           actualStartDate: z.string().optional(),
           actualEndDate: z.string().optional(),
+          productionDate: z.string().optional(),
+          expiryDate: z.string().optional(),
+          planId: z.number().optional(),
           status: z.enum(["draft", "planned", "in_progress", "completed", "cancelled"]).optional(),
           remark: z.string().optional(),
         }),
       }))
       .mutation(async ({ input }) => {
-        const { plannedStartDate, plannedEndDate, actualStartDate, actualEndDate, ...rest } = input.data;
+        const { plannedStartDate, plannedEndDate, actualStartDate, actualEndDate, productionDate, expiryDate, ...rest } = input.data;
         await updateProductionOrder(input.id, {
           ...rest,
           plannedStartDate: plannedStartDate ? new Date(plannedStartDate) : undefined,
           plannedEndDate: plannedEndDate ? new Date(plannedEndDate) : undefined,
           actualStartDate: actualStartDate ? new Date(actualStartDate) : undefined,
           actualEndDate: actualEndDate ? new Date(actualEndDate) : undefined,
+          productionDate: productionDate ? new Date(productionDate) : undefined,
+          expiryDate: expiryDate ? new Date(expiryDate) : undefined,
         });
 
         // C12: 生产完工时自动更新关联的生产计划和销售订单状态
@@ -1586,6 +1596,8 @@ export const appRouter = router({
       .input(z.object({
         productId: z.number(),
         version: z.string(),
+        bomCode: z.string().optional(),
+        effectiveDate: z.string().optional(),
         items: z.array(z.object({
           parentId: z.number().nullable().optional(),
           level: z.number(),
@@ -1609,7 +1621,7 @@ export const appRouter = router({
         })),
       }))
       .mutation(async ({ input }) => {
-        const { productId, version, items } = input;
+        const { productId, version, bomCode, effectiveDate, items } = input;
         const createdIds: number[] = [];
         for (const item of items) {
           // 创建二级物料
@@ -1623,6 +1635,8 @@ export const appRouter = router({
             unit: item.unit,
             unitPrice: item.unitPrice,
             version,
+            bomCode: bomCode || null,
+            effectiveDate: effectiveDate ? (new Date(effectiveDate) as any) : null,
             remark: item.remark,
             status: "active",
           });
@@ -1641,6 +1655,8 @@ export const appRouter = router({
                 unit: child.unit,
                 unitPrice: child.unitPrice,
                 version,
+                bomCode: bomCode || null,
+                effectiveDate: effectiveDate ? (new Date(effectiveDate) as any) : null,
                 remark: child.remark,
                 status: "active",
               });
