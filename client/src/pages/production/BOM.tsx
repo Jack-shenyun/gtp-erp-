@@ -42,6 +42,17 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ==================== 类型定义 ====================
 
@@ -606,6 +617,7 @@ function CreateBOMDialog({
 
   // 状态
   const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [productComboOpen, setProductComboOpen] = useState(false);
   const [version, setVersion] = useState("V1.0");
   const [level2Items, setLevel2Items] = useState<BomLevel2Item[]>([]);
   const [level3DialogOpen, setLevel3DialogOpen] = useState(false);
@@ -759,18 +771,55 @@ function CreateBOMDialog({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>选择成品产品 *</Label>
-                  <Select value={selectedProductId} onValueChange={setSelectedProductId}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="请选择产品..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {finishedProducts.map((p: any) => (
-                        <SelectItem key={p.id} value={String(p.id)}>
-                          {p.code} - {p.name} ({p.specification || "无规格"})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={productComboOpen} onOpenChange={setProductComboOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={productComboOpen}
+                        className="mt-1 w-full justify-between font-normal"
+                      >
+                        {selectedProductId
+                          ? (() => {
+                              const p = finishedProducts.find((p: any) => String(p.id) === selectedProductId);
+                              return p ? `${p.code} - ${p.name}` : "请选择产品...";
+                            })()
+                          : "请选择产品..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="搜索产品编码、名称、规格..." />
+                        <CommandList>
+                          <CommandEmpty>未找到匹配的产品</CommandEmpty>
+                          <CommandGroup>
+                            {finishedProducts.map((p: any) => (
+                              <CommandItem
+                                key={p.id}
+                                value={`${p.code} ${p.name} ${p.specification || ""}`}
+                                onSelect={() => {
+                                  setSelectedProductId(String(p.id));
+                                  setProductComboOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedProductId === String(p.id) ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                <div className="flex flex-col">
+                                  <span className="font-mono text-sm font-medium">{p.code}</span>
+                                  <span className="text-xs text-muted-foreground">{p.name}{p.specification ? ` · ${p.specification}` : ""}</span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div>
                   <Label>BOM 版本 *</Label>
