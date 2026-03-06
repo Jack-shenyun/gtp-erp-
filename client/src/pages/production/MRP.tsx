@@ -42,6 +42,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 
 // MRP计划类型定义
 interface MRPPlan {
@@ -454,198 +455,197 @@ export default function MRPPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        import { getStatusSemanticClass } from "@/lib/statusStyle";
-{/* 查看MRP计划详情对话框 */}
-<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
-    {selectedPlan && (
-      <div className="space-y-4">
-        {/* 标准头部 */}
-        <div className="border-b pb-3">
-          <h2 className="text-lg font-semibold">MRP计划详情</h2>
-          <p className="text-sm text-muted-foreground">
-            {selectedPlan.planCode}
-            {selectedPlan.status && (
-              <> · <Badge variant={statusMap[selectedPlan.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(selectedPlan.status, statusMap[selectedPlan.status]?.label)}`}>
-                {statusMap[selectedPlan.status]?.label || String(selectedPlan.status ?? "-")}
-              </Badge></>
-            )}
-          </p>
-        </div>
+        {/* 查看MRP计划详情对话框 */}
+        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+          <DraggableDialogContent>
+            {selectedPlan && (
+              <div className="space-y-4">
+                {/* 标准头部 */}
+                <div className="border-b pb-3">
+                  <h2 className="text-lg font-semibold">MRP计划详情</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedPlan.planCode}
+                    {selectedPlan.status && (
+                      <> · <Badge variant={statusMap[selectedPlan.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(selectedPlan.status, statusMap[selectedPlan.status]?.label)}`}>
+                        {statusMap[selectedPlan.status]?.label || String(selectedPlan.status ?? "-")}
+                      </Badge></>
+                    )}
+                  </p>
+                </div>
 
-        <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="overview">计划概览</TabsTrigger>
-            <TabsTrigger value="production">生产订单</TabsTrigger>
-            <TabsTrigger value="materials">物料需求</TabsTrigger>
-          </TabsList>
+                <Tabs defaultValue="overview" className="w-full">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="overview">计划概览</TabsTrigger>
+                    <TabsTrigger value="production">生产订单</TabsTrigger>
+                    <TabsTrigger value="materials">物料需求</TabsTrigger>
+                  </TabsList>
 
-          {(() => {
-            const selectedOrders = getProductionOrders(selectedPlan);
-            const selectedMaterials = getMaterialRequirements(selectedPlan);
-            return (
-              <>
-                <TabsContent value="overview" className="space-y-4 pt-4">
-                  <div>
-                    <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                      <div>
-                        <FieldRow label="计划名称">{selectedPlan.planName}</FieldRow>
-                        <FieldRow label="计划类型">{selectedPlan.planType === "weekly" ? "周计划" : selectedPlan.planType === "monthly" ? "月计划" : "自定义"}</FieldRow>
-                        <FieldRow label="计划周期">{`${formatDateValue(selectedPlan.startDate)} ~ ${formatDateValue(selectedPlan.endDate)}`}</FieldRow>
-                      </div>
-                      <div>
-                        <FieldRow label="创建人">{selectedPlan.createdBy}</FieldRow>
-                        <FieldRow label="创建时间">{formatDateValue(selectedPlan.createdAt)}</FieldRow>
-                      </div>
-                    </div>
-                  </div>
+                  {(() => {
+                    const selectedOrders = getProductionOrders(selectedPlan);
+                    const selectedMaterials = getMaterialRequirements(selectedPlan);
+                    return (
+                      <>
+                        <TabsContent value="overview" className="space-y-4 pt-4">
+                          <div>
+                            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                              <div>
+                                <FieldRow label="计划名称">{selectedPlan.planName}</FieldRow>
+                                <FieldRow label="计划类型">{selectedPlan.planType === "weekly" ? "周计划" : selectedPlan.planType === "monthly" ? "月计划" : "自定义"}</FieldRow>
+                                <FieldRow label="计划周期">{`${formatDateValue(selectedPlan.startDate)} ~ ${formatDateValue(selectedPlan.endDate)}`}</FieldRow>
+                              </div>
+                              <div>
+                                <FieldRow label="创建人">{selectedPlan.createdBy}</FieldRow>
+                                <FieldRow label="创建时间">{formatDateValue(selectedPlan.createdAt)}</FieldRow>
+                              </div>
+                            </div>
+                          </div>
 
-                  {/* 统计摘要 */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <Card>
-                      <CardContent className="p-4 text-center">
-                        <Package className="h-8 w-8 mx-auto text-blue-500 mb-2" />
-                        <div className="text-2xl font-bold">{selectedOrders.length}</div>
-                        <div className="text-sm text-muted-foreground">生产订单</div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="p-4 text-center">
-                        <TrendingUp className="h-8 w-8 mx-auto text-green-500 mb-2" />
-                        <div className="text-2xl font-bold">{selectedMaterials.length}</div>
-                        <div className="text-sm text-muted-foreground">物料项目</div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="p-4 text-center">
-                        <AlertTriangle className="h-8 w-8 mx-auto text-red-500 mb-2" />
-                        <div className="text-2xl font-bold text-red-600">
-                          {selectedMaterials.filter((m: any) => m.urgency === "high").length}
-                        </div>
-                        <div className="text-sm text-muted-foreground">紧急物料</div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="p-4 text-center">
-                        <CheckCircle className="h-8 w-8 mx-auto text-purple-500 mb-2" />
-                        <div className="text-2xl font-bold">
-                          {selectedMaterials.filter((m: any) => m.suggestedAction === "purchase" && m.netRequirement > 0).length}
-                        </div>
-                        <div className="text-sm text-muted-foreground">需采购</div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </TabsContent>
+                          {/* 统计摘要 */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <Card>
+                              <CardContent className="p-4 text-center">
+                                <Package className="h-8 w-8 mx-auto text-blue-500 mb-2" />
+                                <div className="text-2xl font-bold">{selectedOrders.length}</div>
+                                <div className="text-sm text-muted-foreground">生产订单</div>
+                              </CardContent>
+                            </Card>
+                            <Card>
+                              <CardContent className="p-4 text-center">
+                                <TrendingUp className="h-8 w-8 mx-auto text-green-500 mb-2" />
+                                <div className="text-2xl font-bold">{selectedMaterials.length}</div>
+                                <div className="text-sm text-muted-foreground">物料项目</div>
+                              </CardContent>
+                            </Card>
+                            <Card>
+                              <CardContent className="p-4 text-center">
+                                <AlertTriangle className="h-8 w-8 mx-auto text-red-500 mb-2" />
+                                <div className="text-2xl font-bold text-red-600">
+                                  {selectedMaterials.filter((m: any) => m.urgency === "high").length}
+                                </div>
+                                <div className="text-sm text-muted-foreground">紧急物料</div>
+                              </CardContent>
+                            </Card>
+                            <Card>
+                              <CardContent className="p-4 text-center">
+                                <CheckCircle className="h-8 w-8 mx-auto text-purple-500 mb-2" />
+                                <div className="text-2xl font-bold">
+                                  {selectedMaterials.filter((m: any) => m.suggestedAction === "purchase" && m.netRequirement > 0).length}
+                                </div>
+                                <div className="text-sm text-muted-foreground">需采购</div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </TabsContent>
 
-                <TabsContent value="production" className="pt-4">
-                  <div>
-                    <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide flex justify-between items-center">
-                      <span>关联生产订单</span>
-                      <Button variant="outline" size="sm"><Plus className="h-4 w-4 mr-1" />添加订单</Button>
-                    </h3>
-                    {selectedOrders.length > 0 ? (
-                      <Table>
-                        <TableHeader><TableRow className="bg-muted/60">
-                          <TableHead className="text-center font-bold">订单编号</TableHead>
-                          <TableHead className="text-center font-bold">产品编码</TableHead>
-                          <TableHead className="text-center font-bold">产品名称</TableHead>
-                          <TableHead className="text-center font-bold">计划数量</TableHead>
-                          <TableHead className="text-center font-bold">计划日期</TableHead>
-                        </TableRow></TableHeader>
-                        <TableBody>
-                          {selectedOrders.map((order: any) => (
-                            <TableRow key={order.id}>
-                              <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
-                              <TableCell className="text-center font-mono">{order.productCode}</TableCell>
-                              <TableCell className="text-center font-medium">{order.productName}</TableCell>
-                              <TableCell className="text-center">{order.quantity?.toLocaleString?.() ?? "0"}</TableCell>
-                              <TableCell className="text-center">{formatDateValue(order.plannedDate)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <div className="text-center py-8 text-muted-foreground bg-muted/40 rounded-lg">暂无关联生产订单</div>
+                        <TabsContent value="production" className="pt-4">
+                          <div>
+                            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide flex justify-between items-center">
+                              <span>关联生产订单</span>
+                              <Button variant="outline" size="sm"><Plus className="h-4 w-4 mr-1" />添加订单</Button>
+                            </h3>
+                            {selectedOrders.length > 0 ? (
+                              <Table>
+                                <TableHeader><TableRow className="bg-muted/60">
+                                  <TableHead className="text-center font-bold">订单编号</TableHead>
+                                  <TableHead className="text-center font-bold">产品编码</TableHead>
+                                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                                  <TableHead className="text-center font-bold">计划数量</TableHead>
+                                  <TableHead className="text-center font-bold">计划日期</TableHead>
+                                </TableRow></TableHeader>
+                                <TableBody>
+                                  {selectedOrders.map((order: any) => (
+                                    <TableRow key={order.id}>
+                                      <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                                      <TableCell className="text-center font-mono">{order.productCode}</TableCell>
+                                      <TableCell className="text-center font-medium">{order.productName}</TableCell>
+                                      <TableCell className="text-center">{order.quantity?.toLocaleString?.() ?? "0"}</TableCell>
+                                      <TableCell className="text-center">{formatDateValue(order.plannedDate)}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            ) : (
+                              <div className="text-center py-8 text-muted-foreground bg-muted/40 rounded-lg">暂无关联生产订单</div>
+                            )}
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="materials" className="pt-4">
+                          <div>
+                            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide flex justify-between items-center">
+                              <span>物料需求清单</span>
+                              <div className="flex gap-2">
+                                <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1" />导出Excel</Button>
+                                {selectedMaterials.filter((m: any) => m.suggestedAction === "purchase" && m.netRequirement > 0).length > 0 && (
+                                  <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleGeneratePurchaseRequest(selectedPlan)}>
+                                    <ShoppingCart className="h-4 w-4 mr-1" />一键生成采购申请单
+                                  </Button>
+                                )}
+                              </div>
+                            </h3>
+                            {selectedMaterials.length > 0 ? (
+                              <div className="overflow-x-auto">
+                                <Table>
+                                  <TableHeader><TableRow className="bg-muted/60">
+                                    <TableHead className="text-center font-bold">物料编码</TableHead>
+                                    <TableHead className="text-center font-bold">物料名称</TableHead>
+                                    <TableHead className="text-center font-bold">规格</TableHead>
+                                    <TableHead className="text-center font-bold">需求量</TableHead>
+                                    <TableHead className="text-center font-bold">库存量</TableHead>
+                                    <TableHead className="text-center font-bold">在途量</TableHead>
+                                    <TableHead className="text-center font-bold">净需求</TableHead>
+                                    <TableHead className="text-center font-bold">紧急程度</TableHead>
+                                    <TableHead className="text-center font-bold">建议操作</TableHead>
+                                    <TableHead className="text-center font-bold">建议下单日期</TableHead>
+                                  </TableRow></TableHeader>
+                                  <TableBody>
+                                    {selectedMaterials.map((mat: any) => (
+                                      <TableRow key={mat.id}>
+                                        <TableCell className="text-center font-mono">{mat.materialCode}</TableCell>
+                                        <TableCell className="text-center font-medium">{mat.materialName}</TableCell>
+                                        <TableCell className="text-center">{mat.spec}</TableCell>
+                                        <TableCell className="text-center">{mat.requiredQty?.toLocaleString?.() ?? "0"} {mat.unit}</TableCell>
+                                        <TableCell className="text-center">{mat.onHandQty?.toLocaleString?.() ?? "0"}</TableCell>
+                                        <TableCell className="text-center">{mat.onOrderQty?.toLocaleString?.() ?? "0"}</TableCell>
+                                        <TableCell className="text-center font-medium">
+                                          {mat.netRequirement > 0 ? <span className="text-red-600">{mat.netRequirement?.toLocaleString?.() ?? "0"}</span> : <span className="text-green-600">0</span>}
+                                        </TableCell>
+                                        <TableCell className="text-center"><Badge className={urgencyMap[mat.urgency]?.color || "text-gray-600"}>{urgencyMap[mat.urgency]?.label || String(mat.urgency ?? "-")}</Badge></TableCell>
+                                        <TableCell className="text-center"><span className={actionMap[mat.suggestedAction]?.color || "text-gray-600"}>{actionMap[mat.suggestedAction]?.label || String(mat.suggestedAction ?? "-")}</span></TableCell>
+                                        <TableCell className="text-center">{formatDateValue(mat.suggestedOrderDate)}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            ) : (
+                              <div className="text-center py-8 text-muted-foreground bg-muted/40 rounded-lg">请先运行MRP计算以生成物料需求</div>
+                            )}
+                          </div>
+                        </TabsContent>
+                      </>
+                    );
+                  })()}
+                </Tabs>
+
+                {/* 标准操作按钮 */}
+                <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+                  <div className="flex gap-2 flex-wrap"></div>
+                  <div className="flex gap-2 flex-wrap justify-end">
+                    <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+                    {selectedPlan.status === "draft" && (
+                      <Button variant="ghost" size="sm" onClick={() => handleRunMRP(selectedPlan)}>
+                        <Play className="h-4 w-4 mr-1" />
+                        运算
+                      </Button>
                     )}
                   </div>
-                </TabsContent>
-
-                <TabsContent value="materials" className="pt-4">
-                  <div>
-                    <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide flex justify-between items-center">
-                      <span>物料需求清单</span>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1" />导出Excel</Button>
-                        {selectedMaterials.filter((m: any) => m.suggestedAction === "purchase" && m.netRequirement > 0).length > 0 && (
-                          <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleGeneratePurchaseRequest(selectedPlan)}>
-                            <ShoppingCart className="h-4 w-4 mr-1" />一键生成采购申请单
-                          </Button>
-                        )}
-                      </div>
-                    </h3>
-                    {selectedMaterials.length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader><TableRow className="bg-muted/60">
-                            <TableHead className="text-center font-bold">物料编码</TableHead>
-                            <TableHead className="text-center font-bold">物料名称</TableHead>
-                            <TableHead className="text-center font-bold">规格</TableHead>
-                            <TableHead className="text-center font-bold">需求量</TableHead>
-                            <TableHead className="text-center font-bold">库存量</TableHead>
-                            <TableHead className="text-center font-bold">在途量</TableHead>
-                            <TableHead className="text-center font-bold">净需求</TableHead>
-                            <TableHead className="text-center font-bold">紧急程度</TableHead>
-                            <TableHead className="text-center font-bold">建议操作</TableHead>
-                            <TableHead className="text-center font-bold">建议下单日期</TableHead>
-                          </TableRow></TableHeader>
-                          <TableBody>
-                            {selectedMaterials.map((mat: any) => (
-                              <TableRow key={mat.id}>
-                                <TableCell className="text-center font-mono">{mat.materialCode}</TableCell>
-                                <TableCell className="text-center font-medium">{mat.materialName}</TableCell>
-                                <TableCell className="text-center">{mat.spec}</TableCell>
-                                <TableCell className="text-center">{mat.requiredQty?.toLocaleString?.() ?? "0"} {mat.unit}</TableCell>
-                                <TableCell className="text-center">{mat.onHandQty?.toLocaleString?.() ?? "0"}</TableCell>
-                                <TableCell className="text-center">{mat.onOrderQty?.toLocaleString?.() ?? "0"}</TableCell>
-                                <TableCell className="text-center font-medium">
-                                  {mat.netRequirement > 0 ? <span className="text-red-600">{mat.netRequirement?.toLocaleString?.() ?? "0"}</span> : <span className="text-green-600">0</span>}
-                                </TableCell>
-                                <TableCell className="text-center"><Badge className={urgencyMap[mat.urgency]?.color || "text-gray-600"}>{urgencyMap[mat.urgency]?.label || String(mat.urgency ?? "-")}</Badge></TableCell>
-                                <TableCell className="text-center"><span className={actionMap[mat.suggestedAction]?.color || "text-gray-600"}>{actionMap[mat.suggestedAction]?.label || String(mat.suggestedAction ?? "-")}</span></TableCell>
-                                <TableCell className="text-center">{formatDateValue(mat.suggestedOrderDate)}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 text-muted-foreground bg-muted/40 rounded-lg">请先运行MRP计算以生成物料需求</div>
-                    )}
-                  </div>
-                </TabsContent>
-              </>
-            );
-          })()}
-        </Tabs>
-
-        {/* 标准操作按钮 */}
-        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
-          <div className="flex gap-2 flex-wrap"></div>
-          <div className="flex gap-2 flex-wrap justify-end">
-            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-            {selectedPlan.status === "draft" && (
-              <Button variant="ghost" size="sm" onClick={() => handleRunMRP(selectedPlan)}>
-                <Play className="h-4 w-4 mr-1" />
-                运算
-              </Button>
+                </div>
+              </div>
             )}
-          </div>
-        </div>
-      </div>
-    )}
-  </DraggableDialogContent>
-</DraggableDialog>
+          </DraggableDialogContent>
+        </DraggableDialog>
       </div>
 
       {/* 生产部门前置确认对话框 */}
