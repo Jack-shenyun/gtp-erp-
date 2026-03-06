@@ -1572,11 +1572,83 @@ export const appRouter = router({
         specification: z.string().optional(),
         quantity: z.string(),
         unit: z.string().optional(),
+        unitPrice: z.string().optional(),
         version: z.string().optional(),
+        remark: z.string().optional(),
         status: z.enum(["active", "inactive"]).optional(),
       }))
       .mutation(async ({ input }) => {
         return await createBomItem(input);
+      }),
+
+    // 批量创建 BOM 物料（新建 BOM 时一次性提交所有物料）
+    batchCreate: protectedProcedure
+      .input(z.object({
+        productId: z.number(),
+        version: z.string(),
+        items: z.array(z.object({
+          parentId: z.number().nullable().optional(),
+          level: z.number(),
+          materialCode: z.string(),
+          materialName: z.string(),
+          specification: z.string().optional(),
+          quantity: z.string(),
+          unit: z.string().optional(),
+          unitPrice: z.string().optional(),
+          remark: z.string().optional(),
+          children: z.array(z.object({
+            level: z.number(),
+            materialCode: z.string(),
+            materialName: z.string(),
+            specification: z.string().optional(),
+            quantity: z.string(),
+            unit: z.string().optional(),
+            unitPrice: z.string().optional(),
+            remark: z.string().optional(),
+          })).optional(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        const { productId, version, items } = input;
+        const createdIds: number[] = [];
+        for (const item of items) {
+          // 创建二级物料
+          const parentBomId = await createBomItem({
+            productId,
+            level: item.level,
+            materialCode: item.materialCode,
+            materialName: item.materialName,
+            specification: item.specification,
+            quantity: item.quantity,
+            unit: item.unit,
+            unitPrice: item.unitPrice,
+            version,
+            remark: item.remark,
+            status: "active",
+          });
+          createdIds.push(parentBomId);
+          // 创建三级子物料
+          if (item.children && item.children.length > 0) {
+            for (const child of item.children) {
+              const childId = await createBomItem({
+                productId,
+                parentId: parentBomId,
+                level: child.level,
+                materialCode: child.materialCode,
+                materialName: child.materialName,
+                specification: child.specification,
+                quantity: child.quantity,
+                unit: child.unit,
+                unitPrice: child.unitPrice,
+                version,
+                remark: child.remark,
+                status: "active",
+              });
+              createdIds.push(childId);
+            }
+          }
+        }
+        return { success: true, createdIds };
       }),
 
     update: protectedProcedure
@@ -1591,7 +1663,9 @@ export const appRouter = router({
           specification: z.string().optional(),
           quantity: z.string().optional(),
           unit: z.string().optional(),
+          unitPrice: z.string().optional(),
           version: z.string().optional(),
+          remark: z.string().optional(),
           status: z.enum(["active", "inactive"]).optional(),
         }),
       }))

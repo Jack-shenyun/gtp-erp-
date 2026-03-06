@@ -71,8 +71,10 @@ export const bom = mysqlTable("bom", {
   specification: varchar("specification", { length: 200 }), // 规格
   quantity: decimal("quantity", { precision: 10, scale: 4 }).notNull(), // 用量
   unit: varchar("unit", { length: 20 }), // 单位
+  unitPrice: decimal("unitPrice", { precision: 12, scale: 4 }).default("0"), // 单价
   version: varchar("version", { length: 20 }), // BOM版本
   status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  remark: varchar("remark", { length: 500 }), // 备注
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

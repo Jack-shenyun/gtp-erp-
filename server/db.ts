@@ -1890,8 +1890,10 @@ export async function getBomByProductId(productId: number) {
       specification: bom.specification,
       quantity: bom.quantity,
       unit: bom.unit,
+      unitPrice: bom.unitPrice,
       version: bom.version,
       status: bom.status,
+      remark: bom.remark,
       createdAt: bom.createdAt,
       updatedAt: bom.updatedAt,
     })
@@ -1904,7 +1906,7 @@ export async function getBomByProductId(productId: number) {
 export async function getBomList() {
   const db = await getDb();
   if (!db) return [];
-  // 使用原生 SQL 按产品分组聚合
+  // 使用原生 SQL 按产品分组聚合，并汇总材料成本
   const result = await db.execute(sql`
     SELECT 
       b.productId,
@@ -1912,7 +1914,11 @@ export async function getBomList() {
       p.name AS productName,
       p.code AS productCode,
       p.specification AS productSpec,
+      p.unit AS productUnit,
+      p.category AS productCategory,
+      p.productCategory AS productType,
       COUNT(*) AS itemCount,
+      COALESCE(SUM(b.quantity * b.unitPrice), 0) AS totalCost,
       MIN(b.createdAt) AS createdAt,
       MAX(b.updatedAt) AS updatedAt,
       GROUP_CONCAT(DISTINCT b.status) AS statuses
