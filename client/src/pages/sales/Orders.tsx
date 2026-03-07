@@ -99,9 +99,10 @@ const statusMap: Record<string, { label: string; variant: "outline" | "secondary
   pending_review: { label: "待审批", variant: "secondary"   },
   approved:       { label: "已审批", variant: "default"     },
   in_production:  { label: "生产中", variant: "default"     },
-  ready_to_ship:  { label: "待发货", variant: "secondary"   },
-  shipped:        { label: "已发货", variant: "secondary"   },
-  completed:      { label: "已完成", variant: "secondary"   },
+  ready_to_ship:    { label: "待发货",   variant: "secondary"   },
+  partial_shipped:  { label: "部分发货", variant: "secondary"   },
+  shipped:          { label: "已发货",   variant: "secondary"   },
+  completed:        { label: "已完成",   variant: "secondary"   },
   cancelled:      { label: "已取消", variant: "destructive" },
 };
 const PREPAY_RATIO_MARKER = "[PREPAY_RATIO]";
@@ -114,6 +115,7 @@ const ORDER_STATUS_OPTIONS = [
   { value: "processing", label: "处理中" },
   { value: "in_production", label: "生产中" },
   { value: "ready_to_ship", label: "待发货" },
+  { value: "partial_shipped", label: "部分发货" },
   { value: "shipped", label: "已发货" },
   { value: "completed", label: "已完成" },
   { value: "cancelled", label: "已取消" },
@@ -1520,8 +1522,8 @@ export default function SalesOrdersPage() {
                       {selectedRecord.status === "confirmed" && (
                         <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "processing")}>开始处理</Button>
                       )}
-                      {(selectedRecord.status === "processing" || selectedRecord.status === "approved" || selectedRecord.status === "ready_to_ship" || selectedRecord.status === "in_production") && (
-                        <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(selectedRecord, "shipped")}>确认发货</Button>
+                      {(selectedRecord.status === "processing" || selectedRecord.status === "approved" || selectedRecord.status === "ready_to_ship" || selectedRecord.status === "in_production" || selectedRecord.status === "partial_shipped") && (
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(selectedRecord, "completed")}>确认全部发货</Button>
                       )}
                       {selectedRecord.status === "shipped" && (
                         <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "completed")}>完成订单</Button>

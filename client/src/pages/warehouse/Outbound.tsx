@@ -257,6 +257,7 @@ export default function OutboundPage() {
     const map: Record<string, string> = {
       approved: "已审批",
       ready_to_ship: "待发货",
+      partial_shipped: "部分发货",
       shipped: "已发货",
       completed: "已完成",
       cancelled: "已取消",

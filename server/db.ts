@@ -2201,12 +2201,75 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
     console.error("自动更新库存失败:", e);
   }
 
-  // C2: 销售出库时自动将关联销售订单状态更新为「已发货」
+  // C2: 销售出库时自动联动销售订单状态
+  // 逻辑：按产品汇总已发数量并更新 deliveredQty，再对比订单总量判断状态
+  // - 全部发货完成 → completed
+  // - 部分发货     → partial_shipped
   if (data.type === "sales_out" && data.relatedOrderId) {
     try {
-      await db.update(salesOrders)
-        .set({ status: "shipped" })
-        .where(eq(salesOrders.id, data.relatedOrderId));
+      // 查询订单明细（全部产品的订单数量）
+      const orderItems = await db
+        .select()
+        .from(salesOrderItems)
+        .where(eq(salesOrderItems.orderId, data.relatedOrderId));
+
+      if (orderItems.length > 0) {
+        // 汇总该订单所有已创建的 sales_out 出库流水（按产品汇总）
+        const outboundTxs = await db
+          .select()
+          .from(inventoryTransactions)
+          .where(
+            and(
+              eq(inventoryTransactions.relatedOrderId, data.relatedOrderId),
+              eq(inventoryTransactions.type, "sales_out")
+            )
+          );
+
+        // 按 productId 汇总已出库数量（包含本次新建的）
+        const deliveredMap = new Map<number, number>();
+        for (const tx of outboundTxs) {
+          if (tx.productId) {
+            const prev = deliveredMap.get(tx.productId) || 0;
+            deliveredMap.set(tx.productId, prev + (parseFloat(String(tx.quantity)) || 0));
+          }
+        }
+
+        // 更新每个订单明细的 deliveredQty
+        for (const item of orderItems) {
+          const delivered = deliveredMap.get(item.productId) || 0;
+          await db
+            .update(salesOrderItems)
+            .set({ deliveredQty: String(delivered) })
+            .where(eq(salesOrderItems.id, item.id));
+        }
+
+        // 判断订单整体发货状态
+        const totalOrdered = orderItems.reduce((sum, item) => sum + (parseFloat(String(item.quantity)) || 0), 0);
+        const totalDelivered = orderItems.reduce((sum, item) => {
+          const delivered = deliveredMap.get(item.productId) || 0;
+          return sum + delivered;
+        }, 0);
+
+        let newStatus: string;
+        if (totalDelivered <= 0) {
+          newStatus = "approved"; // 尚未发货，保持已审批
+        } else if (totalDelivered >= totalOrdered) {
+          newStatus = "completed"; // 全部发货完成
+        } else {
+          newStatus = "partial_shipped"; // 部分发货
+        }
+
+        await db
+          .update(salesOrders)
+          .set({ status: newStatus as any })
+          .where(eq(salesOrders.id, data.relatedOrderId));
+      } else {
+        // 订单无明细，直接标记已发货
+        await db
+          .update(salesOrders)
+          .set({ status: "shipped" as any })
+          .where(eq(salesOrders.id, data.relatedOrderId));
+      }
     } catch (e) {
       console.error("自动更新销售订单状态失败:", e);
     }

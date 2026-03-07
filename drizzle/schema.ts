@@ -275,7 +275,7 @@ export const salesOrders = mysqlTable("sales_orders", {
   depositRate: decimal("depositRate", { precision: 5, scale: 2 }), // 定金比例 (如 30.00 表示 30%)
   depositAmount: decimal("depositAmount", { precision: 14, scale: 2 }), // 定金金额
   depositPaid: decimal("depositPaid", { precision: 14, scale: 2 }).default("0"), // 已付定金
-  status: mysqlEnum("status", ["draft", "pending_review", "approved", "pending_payment", "confirmed", "in_production", "ready_to_ship", "shipped", "completed", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "pending_review", "approved", "pending_payment", "confirmed", "in_production", "ready_to_ship", "partial_shipped", "shipped", "completed", "cancelled"]).default("draft").notNull(),
   paymentStatus: mysqlEnum("paymentStatus", ["unpaid", "partial", "paid"]).default("unpaid").notNull(),
   shippingAddress: text("shippingAddress"),
   shippingContact: varchar("shippingContact", { length: 50 }), // 收货联系人
