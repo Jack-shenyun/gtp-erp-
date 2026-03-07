@@ -535,34 +535,148 @@ function ERPLayoutContent({
   }
 
   return (
-    <>
-      <div className="relative" ref={sidebarRef}>
+    <div className="flex flex-col h-screen w-full overflow-hidden">
+      {/* 全宽顶部导航栏 - 与首页完全一致 */}
+      <header
+        className="flex-none w-full z-50 flex h-12 items-center justify-between px-4 md:px-6"
+        style={{
+          background: "rgba(255,255,255,0.95)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(0,0,0,0.08)",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          {isMobile && (
+            <SidebarTrigger className="h-9 w-9 rounded-lg bg-background mr-1" />
+          )}
+          <div className="flex items-center gap-3">
+            <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
+            <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
+            <span className="text-xs text-slate-400 hidden md:block">公司管理系统</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+              >
+                <Bell className="h-4 w-4 text-slate-600" />
+                {todoCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white leading-none">
+                    {todoCount > 99 ? "99+" : todoCount}
+                  </span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              sideOffset={8}
+              className="w-80 rounded-2xl border-0 p-0 shadow-2xl overflow-hidden"
+              style={{ boxShadow: "0 8px 40px rgba(0,0,0,0.15)" }}
+            >
+              <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-500 to-purple-600">
+                <div className="flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-white" />
+                  <span className="text-sm font-semibold text-white">我的待办</span>
+                  {todoCount > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white/30 px-1.5 text-[11px] font-bold text-white">
+                      {todoCount}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLocation("/workflow/center?tab=todo")}
+                  className="flex items-center gap-1 text-xs text-white/80 hover:text-white transition-colors"
+                >
+                  查看全部
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="bg-white">
+                {todoItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                    <CheckCircle2 className="h-8 w-8 mb-2 text-green-400" />
+                    <p className="text-sm font-medium text-slate-500">暂无待办事项</p>
+                    <p className="text-xs text-slate-400 mt-0.5">所有事项已处理完毕</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-50">
+                    {todoItems.slice(0, 5).map((item: any, idx: number) => (
+                      <button
+                        key={item.id ?? idx}
+                        type="button"
+                        onClick={() => setLocation("/workflow/center?tab=todo")}
+                        className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-50">
+                          <FileText className="h-3.5 w-3.5 text-violet-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-800 truncate">
+                            {item.title ?? item.orderNo ?? item.docNo ?? "待办事项"}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-400 truncate">
+                            {item.applicantName ?? item.createdByName ?? ""}
+                            {item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString("zh-CN")}` : ""}
+                          </p>
+                        </div>
+                        <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-300" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 items-center gap-2 rounded-full px-2 transition-colors hover:bg-slate-100"
+              >
+                <span className="hidden sm:block text-xs font-medium text-slate-700">{userName}</span>
+                <Avatar className="h-7 w-7 border-2 border-white/60 shadow-sm">
+                  <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xs font-bold">
+                    {userInitial}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 rounded-xl shadow-xl border-0 p-1">
+              <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                <p className="text-sm font-semibold text-slate-900">{userName}</p>
+                <p className="text-xs text-slate-400 truncate">{userEmail}</p>
+              </div>
+              <DropdownMenuItem
+                onClick={() => setLocation("/settings/users")}
+                className="rounded-lg text-sm cursor-pointer"
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                系统设置
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => { window.location.href = getLoginUrl(); }}
+                className="rounded-lg text-sm cursor-pointer text-red-500 hover:text-red-600 hover:bg-red-50"
+              >
+                退出登录
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      {/* 下方区域：侧边栏 + 内容区 */}
+      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex-none" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"
-          className="border-r-0"
+          className="border-r-0 !h-[calc(100vh-3rem)] !top-12"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-14 justify-center border-b border-sidebar-border">
-            <div className="flex items-center gap-3 px-2 transition-all w-full">
-              {!isCollapsed && (
-                <div className="flex flex-col min-w-0 items-center w-full">
-                  <button
-                    type="button"
-                    onClick={() => void redirectToLogin()}
-                    className="flex items-center justify-center min-w-0 rounded-md px-1 py-1 hover:bg-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label="跳转登录页"
-                    title="切换用户登录"
-                  >
-                    <img src={shenyunLogo} alt="SHENYUN" className="h-7 w-[150px] object-contain" />
-                  </button>
-                  <span className="mt-0.5 w-[150px] text-[11px] text-muted-foreground inline-flex items-center justify-center gap-1 tracking-[0.01em]">
-                    <span>公司管理系统</span>
-                    <span className="opacity-60">·</span>
-                    <span className="font-medium tabular-nums">V1.0</span>
-                  </span>
-                </div>
-              )}
-            </div>
+          <SidebarHeader className="h-10 justify-center border-b border-sidebar-border">
           </SidebarHeader>
 
           <SidebarContent className="gap-0">
@@ -696,147 +810,11 @@ function ERPLayoutContent({
       </div>
 
       <SidebarInset>
-        {/* 顶部导航栏 - 与首页完全一致的样式 */}
-        <header
-          className="sticky top-0 z-50 flex h-12 items-center justify-between px-4 md:px-6"
-          style={{
-            background: "rgba(255,255,255,0.95)",
-            backdropFilter: "blur(12px)",
-            borderBottom: "1px solid rgba(0,0,0,0.08)",
-          }}
-        >
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background mr-1" />
-            )}
-            {/* Logo + 公司名 + 系统名 */}
-            <div className="flex items-center gap-3">
-              <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
-              <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
-              <span className="text-xs text-slate-400 hidden md:block">公司管理系统</span>
-            </div>
-          </div>
-
-          {/* 右侧操作区 */}
-          <div className="flex items-center gap-2">
-            {/* 待办铃铛 */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
-                >
-                  <Bell className="h-4 w-4 text-slate-600" />
-                  {todoCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white leading-none">
-                      {todoCount > 99 ? "99+" : todoCount}
-                    </span>
-                  )}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                sideOffset={8}
-                className="w-80 rounded-2xl border-0 p-0 shadow-2xl overflow-hidden"
-                style={{ boxShadow: "0 8px 40px rgba(0,0,0,0.15)" }}
-              >
-                <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-500 to-purple-600">
-                  <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 text-white" />
-                    <span className="text-sm font-semibold text-white">我的待办</span>
-                    {todoCount > 0 && (
-                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white/30 px-1.5 text-[11px] font-bold text-white">
-                        {todoCount}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setLocation("/workflow/center?tab=todo")}
-                    className="flex items-center gap-1 text-xs text-white/80 hover:text-white transition-colors"
-                  >
-                    查看全部
-                    <ArrowRight className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="bg-white">
-                  {todoItems.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-slate-400">
-                      <CheckCircle2 className="h-8 w-8 mb-2 text-green-400" />
-                      <p className="text-sm font-medium text-slate-500">暂无待办事项</p>
-                      <p className="text-xs text-slate-400 mt-0.5">所有事项已处理完毕</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-50">
-                      {todoItems.slice(0, 5).map((item: any, idx: number) => (
-                        <button
-                          key={item.id ?? idx}
-                          type="button"
-                          onClick={() => setLocation("/workflow/center?tab=todo")}
-                          className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
-                        >
-                          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-50">
-                            <FileText className="h-3.5 w-3.5 text-violet-500" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-slate-800 truncate">
-                              {item.title ?? item.orderNo ?? item.docNo ?? "待办事项"}
-                            </p>
-                            <p className="mt-0.5 text-xs text-slate-400 truncate">
-                              {item.applicantName ?? item.createdByName ?? ""}
-                              {item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString("zh-CN")}` : ""}
-                            </p>
-                          </div>
-                          <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-300" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-
-            {/* 用户头像 + 下拉 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex h-8 items-center gap-2 rounded-full px-2 transition-colors hover:bg-slate-100"
-                >
-                  <span className="hidden sm:block text-xs font-medium text-slate-700">{userName}</span>
-                  <Avatar className="h-7 w-7 border-2 border-white/60 shadow-sm">
-                    <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xs font-bold">
-                      {userInitial}
-                    </AvatarFallback>
-                  </Avatar>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52 rounded-xl shadow-xl border-0 p-1">
-                <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                  <p className="text-sm font-semibold text-slate-900">{userName}</p>
-                  <p className="text-xs text-slate-400 truncate">{userEmail}</p>
-                </div>
-                <DropdownMenuItem
-                  onClick={() => setLocation("/settings/users")}
-                  className="rounded-lg text-sm cursor-pointer"
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  系统设置
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => { window.location.href = getLoginUrl(); }}
-                  className="rounded-lg text-sm cursor-pointer text-red-500 hover:text-red-600 hover:bg-red-50"
-                >
-                  退出登录
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-        <main className="flex-1 p-4 md:p-6 bg-muted/30 min-h-[calc(100vh-3.5rem)]">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-muted/30 min-h-[calc(100vh-3rem)]">
           {children}
         </main>
       </SidebarInset>
-    </>
+      </div>
+    </div>
   );
 }
