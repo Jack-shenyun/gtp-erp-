@@ -483,16 +483,6 @@ export default function Dashboard() {
             </PopoverContent>
           </Popover>
 
-          {/* 流程中心 */}
-          <button
-            type="button"
-            onClick={() => navigate("/workflow/center")}
-            className="flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-white/30"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-            <span className="hidden sm:block">流程中心</span>
-          </button>
-
           {/* 用户头像 + 下拉 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
