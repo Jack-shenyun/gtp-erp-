@@ -1522,12 +1522,7 @@ export default function SalesOrdersPage() {
                       {selectedRecord.status === "confirmed" && (
                         <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "processing")}>开始处理</Button>
                       )}
-                      {(selectedRecord.status === "processing" || selectedRecord.status === "approved" || selectedRecord.status === "ready_to_ship" || selectedRecord.status === "in_production" || selectedRecord.status === "partial_shipped") && (
-                        <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(selectedRecord, "completed")}>确认全部发货</Button>
-                      )}
-                      {selectedRecord.status === "shipped" && (
-                        <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "completed")}>完成订单</Button>
-                      )}
+
                     </div>
                   </div>
                 </div>
