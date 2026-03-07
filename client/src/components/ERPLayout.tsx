@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -107,7 +108,14 @@ import {
   QrCode,
   Upload,
   Archive,
+  ArrowRight,
+  CheckCircle2,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -366,6 +374,19 @@ function ERPLayoutContent({
   const isMobile = useIsMobile();
   const isHomePage = location === "/";
   const [openMenus, setOpenMenus] = useState<string[]>([]);
+  const userName = String((user as any)?.name ?? "U");
+  const userEmail = String((user as any)?.email ?? "");
+  const userInitial = userName.charAt(0).toUpperCase();
+  const { data: todoData } = trpc.workflowCenter.list.useQuery(
+    { tab: "todo", limit: 5 },
+    { refetchInterval: 60_000 }
+  );
+  const todoItems: any[] = Array.isArray(todoData)
+    ? todoData
+    : Array.isArray((todoData as any)?.items)
+      ? (todoData as any).items
+      : [];
+  const todoCount = todoItems.length;
   const userRole = String((user as any)?.role ?? "user");
   const userDepartment = String((user as any)?.department ?? "");
   const userDepartments = useMemo(() => parseDepartments(userDepartment), [userDepartment]);
@@ -675,34 +696,143 @@ function ERPLayoutContent({
       </div>
 
       <SidebarInset>
-        {/* 顶部导航栏 - 与首页一致的 Logo 样式 */}
-        <div className="flex border-b h-14 items-center justify-between bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+        {/* 顶部导航栏 - 与首页完全一致的样式 */}
+        <header
+          className="sticky top-0 z-50 flex h-12 items-center justify-between px-4 md:px-6"
+          style={{
+            background: "rgba(255,255,255,0.95)",
+            backdropFilter: "blur(12px)",
+            borderBottom: "1px solid rgba(0,0,0,0.08)",
+          }}
+        >
           <div className="flex items-center gap-3">
             {isMobile && (
-              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
+              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background mr-1" />
             )}
-            {/* Logo + 系统名 + 版本号 */}
-            <div className="flex flex-col justify-center">
+            {/* Logo + 公司名 + 系统名 */}
+            <div className="flex items-center gap-3">
               <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
-              <span className="text-[11px] text-muted-foreground mt-0.5 tracking-[0.01em]">
-                公司管理系统
-                <span className="opacity-60 mx-1">·</span>
-                <span className="font-medium tabular-nums">V1.0</span>
-              </span>
-            </div>
-            {/* 当前页面标题 */}
-            <div className="hidden md:flex items-center gap-2 border-l pl-4 ml-1">
-              <h1 className="font-semibold text-base tracking-tight text-foreground">
-                {getCurrentPageTitle()}
-              </h1>
+              <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
+              <span className="text-xs text-slate-400 hidden md:block">公司管理系统</span>
             </div>
           </div>
+
+          {/* 右侧操作区 */}
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <Bell className="h-4 w-4" />
-            </Button>
+            {/* 待办铃铛 */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+                >
+                  <Bell className="h-4 w-4 text-slate-600" />
+                  {todoCount > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white leading-none">
+                      {todoCount > 99 ? "99+" : todoCount}
+                    </span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                sideOffset={8}
+                className="w-80 rounded-2xl border-0 p-0 shadow-2xl overflow-hidden"
+                style={{ boxShadow: "0 8px 40px rgba(0,0,0,0.15)" }}
+              >
+                <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-500 to-purple-600">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-white" />
+                    <span className="text-sm font-semibold text-white">我的待办</span>
+                    {todoCount > 0 && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white/30 px-1.5 text-[11px] font-bold text-white">
+                        {todoCount}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLocation("/workflow/center?tab=todo")}
+                    className="flex items-center gap-1 text-xs text-white/80 hover:text-white transition-colors"
+                  >
+                    查看全部
+                    <ArrowRight className="h-3 w-3" />
+                  </button>
+                </div>
+                <div className="bg-white">
+                  {todoItems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                      <CheckCircle2 className="h-8 w-8 mb-2 text-green-400" />
+                      <p className="text-sm font-medium text-slate-500">暂无待办事项</p>
+                      <p className="text-xs text-slate-400 mt-0.5">所有事项已处理完毕</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-50">
+                      {todoItems.slice(0, 5).map((item: any, idx: number) => (
+                        <button
+                          key={item.id ?? idx}
+                          type="button"
+                          onClick={() => setLocation("/workflow/center?tab=todo")}
+                          className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                        >
+                          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-50">
+                            <FileText className="h-3.5 w-3.5 text-violet-500" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-800 truncate">
+                              {item.title ?? item.orderNo ?? item.docNo ?? "待办事项"}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-400 truncate">
+                              {item.applicantName ?? item.createdByName ?? ""}
+                              {item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString("zh-CN")}` : ""}
+                            </p>
+                          </div>
+                          <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-300" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* 用户头像 + 下拉 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-8 items-center gap-2 rounded-full px-2 transition-colors hover:bg-slate-100"
+                >
+                  <span className="hidden sm:block text-xs font-medium text-slate-700">{userName}</span>
+                  <Avatar className="h-7 w-7 border-2 border-white/60 shadow-sm">
+                    <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xs font-bold">
+                      {userInitial}
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52 rounded-xl shadow-xl border-0 p-1">
+                <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                  <p className="text-sm font-semibold text-slate-900">{userName}</p>
+                  <p className="text-xs text-slate-400 truncate">{userEmail}</p>
+                </div>
+                <DropdownMenuItem
+                  onClick={() => setLocation("/settings/users")}
+                  className="rounded-lg text-sm cursor-pointer"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  系统设置
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => { window.location.href = getLoginUrl(); }}
+                  className="rounded-lg text-sm cursor-pointer text-red-500 hover:text-red-600 hover:bg-red-50"
+                >
+                  退出登录
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </div>
+        </header>
         <main className="flex-1 p-4 md:p-6 bg-muted/30 min-h-[calc(100vh-3.5rem)]">
           {children}
         </main>
