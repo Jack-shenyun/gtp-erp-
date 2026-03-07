@@ -68,6 +68,7 @@ type ProductOption = {
   specification?: string | null;
   unit?: string | null;
   isMedicalDevice: boolean;
+  isSterilized: boolean;
 };
 
 type SalesOrderOption = {
@@ -112,6 +113,7 @@ type OutboundDetailLine = {
   batchNo: string;        // 批号
   sterilizationBatchNo: string; // 灭菌批号
   isMedicalDevice: boolean;
+  isSterilized: boolean;  // 是否需要灭菌（仅当 isMedicalDevice && isSterilized 同时为 true 时才需要填写灭菌批号）
 };
 
 type FormData = {
@@ -215,6 +217,7 @@ export default function OutboundPage() {
           batchNo: "",
           sterilizationBatchNo: "",
           isMedicalDevice: product?.isMedicalDevice ?? false,
+          isSterilized: product?.isSterilized ?? false,
         };
       });
       setDetailLines(lines);
@@ -335,6 +338,7 @@ export default function OutboundPage() {
       batchNo: record.batchNo || "",
       sterilizationBatchNo: record.sterilizationBatchNo || "",
       isMedicalDevice: product?.isMedicalDevice ?? false,
+      isSterilized: product?.isSterilized ?? false,
     }]);
     setFormOpen(true);
   };
@@ -376,10 +380,10 @@ export default function OutboundPage() {
       return;
     }
 
-    // 验证医疗器械灭菌批号
+    // 验证医疗器械灭菌批号（仅当产品同时满足「是医疗器械」且「需要灭菌」时才要求）
     for (const line of validLines) {
-      if (line.isMedicalDevice && !line.sterilizationBatchNo.trim()) {
-        toast.error(`${line.productName} 为医疗器械，必须填写灭菌批号`);
+      if (line.isMedicalDevice && line.isSterilized && !line.sterilizationBatchNo.trim()) {
+        toast.error(`${line.productName} 为需灭菌医疗器械，必须填写灭菌批号`);
         return;
       }
     }
@@ -832,6 +836,7 @@ export default function OutboundPage() {
                           batchNo: "",
                           sterilizationBatchNo: "",
                           isMedicalDevice: false,
+                          isSterilized: false,
                         },
                       ]);
                     }}
@@ -871,6 +876,10 @@ export default function OutboundPage() {
                         <TableHead className="min-w-[100px]">
                           批号
                         </TableHead>
+                        <TableHead className="min-w-[120px]">
+                          灭菌批号
+                          <span className="text-xs text-muted-foreground ml-1">(灭菌器械必填)</span>
+                        </TableHead>
                         <TableHead className="min-w-[100px]">
                           出库数量 <span className="text-destructive">*</span>
                         </TableHead>
@@ -907,6 +916,9 @@ export default function OutboundPage() {
                                                 specification: product.specification || "",
                                                 unit: product.unit || "",
                                                 isMedicalDevice: product.isMedicalDevice,
+                                                isSterilized: product.isSterilized,
+                                                // 切换产品时清空灭菌批号
+                                                sterilizationBatchNo: "",
                                               }
                                             : l
                                         )
@@ -970,6 +982,20 @@ export default function OutboundPage() {
                                   onChange={(e) => updateDetailLine(line.key, "batchNo", e.target.value)}
                                   placeholder="输入批号"
                                 />
+                              )}
+                            </TableCell>
+
+                            {/* 灭菌批号（仅当产品是医疗器械且需灭菌时显示） */}
+                            <TableCell>
+                              {line.isMedicalDevice && line.isSterilized ? (
+                                <Input
+                                  className="h-8 text-xs w-28"
+                                  value={line.sterilizationBatchNo}
+                                  onChange={(e) => updateDetailLine(line.key, "sterilizationBatchNo", e.target.value)}
+                                  placeholder="灭菌批号 *"
+                                />
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
                               )}
                             </TableCell>
 

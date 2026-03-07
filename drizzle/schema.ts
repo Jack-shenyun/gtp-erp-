@@ -207,6 +207,7 @@ export const inventory = mysqlTable("inventory", {
   itemName: varchar("itemName", { length: 200 }).notNull(), // 物品名称
   batchNo: varchar("batchNo", { length: 50 }), // 批次号
   lotNo: varchar("lotNo", { length: 50 }), // 批号
+  sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }), // 灭菌批号
   quantity: decimal("quantity", { precision: 12, scale: 4 }).notNull(), // 库存数量
   unit: varchar("unit", { length: 20 }),
   location: varchar("location", { length: 50 }), // 库位
