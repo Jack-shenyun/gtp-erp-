@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import {
   PackageMinus, Plus, Search, Eye, Edit, Trash2, MoreHorizontal,
-  Printer, CheckCircle, X,
+  Printer, X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -237,15 +237,6 @@ export default function OutboundPage() {
     onSuccess: () => { toast.success("出库单已删除"); refetch(); },
     onError: (e) => toast.error("删除失败：" + e.message),
   });
-  const updateSalesOrderMutation = trpc.salesOrders.update.useMutation({
-    onSuccess: () => {
-      toast.success("发货确认成功，销售订单已更新为已发货");
-      refetch();
-      setDetailOpen(false);
-    },
-    onError: (e) => toast.error("发货确认失败：" + e.message),
-  });
-
   // ==================== 辅助函数 ====================
   const getWarehouseName = (warehouseId: number) => {
     const wh = (warehouseList as any[]).find((w: any) => w.id === warehouseId);
@@ -454,18 +445,6 @@ export default function OutboundPage() {
         });
       });
     }
-  };
-
-  // 发货确认
-  const handleConfirmShipment = (record: OutboundRecord) => {
-    if (!record.relatedOrderId) {
-      toast.error("该出库单未关联销售订单，无法执行发货确认");
-      return;
-    }
-    updateSalesOrderMutation.mutate({
-      id: record.relatedOrderId,
-      data: { status: "shipped" },
-    });
   };
 
   // ==================== 过滤数据 ====================
@@ -1307,20 +1286,7 @@ export default function OutboundPage() {
                       >
                         <Edit className="h-4 w-4 mr-1.5" />编辑出库单
                       </Button>
-                      {viewingRecord.relatedOrderId &&
-                        relatedOrder &&
-                        relatedOrder.status !== "shipped" &&
-                        relatedOrder.status !== "completed" &&
-                        relatedOrder.status !== "cancelled" && (
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700"
-                            onClick={() => handleConfirmShipment(viewingRecord)}
-                            disabled={updateSalesOrderMutation.isPending}
-                          >
-                            <CheckCircle className="h-4 w-4 mr-1.5" />发货确认
-                          </Button>
-                        )}
+
                     </div>
                   </div>
                 </div>
