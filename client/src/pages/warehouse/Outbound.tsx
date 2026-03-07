@@ -119,6 +119,7 @@ type FormData = {
   type: string;
   relatedOrderId: string;
   warehouseId: string;
+  hasShipping: string; // "yes" | "no" | ""
   shippingFee: string;
   logisticsSupplierId: string;
   logisticsSupplierName: string;
@@ -147,6 +148,7 @@ export default function OutboundPage() {
     type: "sales_out",
     relatedOrderId: "",
     warehouseId: "",
+    hasShipping: "",
     shippingFee: "",
     logisticsSupplierId: "",
     logisticsSupplierName: "",
@@ -288,6 +290,7 @@ export default function OutboundPage() {
       type: "sales_out",
       relatedOrderId: "",
       warehouseId: "",
+      hasShipping: "",
       shippingFee: "",
       logisticsSupplierId: "",
       logisticsSupplierName: "",
@@ -304,13 +307,16 @@ export default function OutboundPage() {
 
   const handleEdit = (record: OutboundRecord) => {
     setEditingRecord(record);
+    const recShippingFee = (record as any).shippingFee || "";
+    const recLogisticsId = (record as any).logisticsSupplierId ? String((record as any).logisticsSupplierId) : "";
     setFormData({
       documentNo: record.documentNo || "",
       type: record.type,
       relatedOrderId: record.relatedOrderId ? String(record.relatedOrderId) : "",
       warehouseId: record.warehouseId ? String(record.warehouseId) : "",
-      shippingFee: (record as any).shippingFee || "",
-      logisticsSupplierId: (record as any).logisticsSupplierId ? String((record as any).logisticsSupplierId) : "",
+      hasShipping: (recShippingFee || recLogisticsId) ? "yes" : "no",
+      shippingFee: recShippingFee,
+      logisticsSupplierId: recLogisticsId,
       logisticsSupplierName: (record as any).logisticsSupplierName || "",
       remark: record.remark || "",
     });
@@ -639,7 +645,7 @@ export default function OutboundPage() {
             {/* 基本信息 */}
             <div>
               <h3 className="text-sm font-medium mb-3">基本信息</h3>
-              {/* 第一行：出库单号、出库类型、出库仓库、物流供应商 */}
+              {/* 第一行：出库单号、出库类型、出库仓库、是否含运费 */}
               <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>出库单号</Label>
@@ -685,45 +691,69 @@ export default function OutboundPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>物流供应商</Label>
+                  <Label>是否含运费 <span className="text-destructive">*</span></Label>
                   <Select
-                    value={formData.logisticsSupplierId}
+                    value={formData.hasShipping}
                     onValueChange={(v) => {
-                      const supplier = logisticsSuppliers.find((s: any) => String(s.id) === v);
                       setFormData((p) => ({
                         ...p,
-                        logisticsSupplierId: v,
-                        logisticsSupplierName: supplier ? supplier.name : "",
+                        hasShipping: v,
+                        // 选择「否」时清空运费相关字段
+                        ...(v === "no" ? { shippingFee: "", logisticsSupplierId: "", logisticsSupplierName: "" } : {}),
                       }));
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="请选择物流供应商" />
+                      <SelectValue placeholder="请选择" />
                     </SelectTrigger>
                     <SelectContent>
-                      {logisticsSuppliers.map((s: any) => (
-                        <SelectItem key={s.id} value={String(s.id)}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="yes">是</SelectItem>
+                      <SelectItem value="no">否</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              {/* 第二行：运费 */}
-              <div className="grid grid-cols-4 gap-4 mt-4">
-                <div className="space-y-2">
-                  <Label>运费（元）</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="请输入运费金额"
-                    value={formData.shippingFee}
-                    onChange={(e) => setFormData((p) => ({ ...p, shippingFee: e.target.value }))}
-                  />
+              {/* 含运费时展开：物流供应商 + 运费 */}
+              {formData.hasShipping === "yes" && (
+                <div className="grid grid-cols-4 gap-4 mt-4">
+                  <div className="space-y-2 col-span-3">
+                    <Label>物流供应商</Label>
+                    <Select
+                      value={formData.logisticsSupplierId}
+                      onValueChange={(v) => {
+                        const supplier = logisticsSuppliers.find((s: any) => String(s.id) === v);
+                        setFormData((p) => ({
+                          ...p,
+                          logisticsSupplierId: v,
+                          logisticsSupplierName: supplier ? supplier.name : "",
+                        }));
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="请选择物流供应商" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {logisticsSuppliers.map((s: any) => (
+                          <SelectItem key={s.id} value={String(s.id)}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>运费（元）</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="请输入运费金额"
+                      value={formData.shippingFee}
+                      onChange={(e) => setFormData((p) => ({ ...p, shippingFee: e.target.value }))}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* 关联销售订单（仅销售出库显示） */}
