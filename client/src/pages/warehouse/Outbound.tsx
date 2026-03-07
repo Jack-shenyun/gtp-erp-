@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import {
   PackageMinus, Plus, Search, Eye, Edit, Trash2, MoreHorizontal,
@@ -236,9 +236,23 @@ export default function OutboundPage() {
     onError: (e) => toast.error("更新失败：" + e.message),
   });
   const deleteMutation = trpc.inventoryTransactions.delete.useMutation({
-    onSuccess: () => { toast.success("出库单已删除"); refetch(); },
+    onSuccess: (_, variables) => {
+      toast.success("出库单已删除");
+      // 删除后同步订单状态（通过 deletingOrderId 传入）
+      if (deletingOrderIdRef.current) {
+        syncShipmentStatusMutation.mutate(
+          { orderId: deletingOrderIdRef.current },
+          { onSettled: () => { refetch(); deletingOrderIdRef.current = null; } }
+        );
+      } else {
+        refetch();
+      }
+    },
     onError: (e) => toast.error("删除失败：" + e.message),
   });
+  const syncShipmentStatusMutation = trpc.salesOrders.syncShipmentStatus.useMutation();
+  // 删除时临时存储关联订单 ID，用于删除完成后触发状态同步
+  const deletingOrderIdRef = useRef<number | null>(null);
   // ==================== 辅助函数 ====================
   const getWarehouseName = (warehouseId: number) => {
     const wh = (warehouseList as any[]).find((w: any) => w.id === warehouseId);
@@ -344,6 +358,12 @@ export default function OutboundPage() {
 
   const handleDelete = (record: OutboundRecord) => {
     if (!canDelete) { toast.error("您没有删除权限"); return; }
+    // 如果是销售出库且有关联订单，记录订单 ID 以便删除后同步状态
+    if (record.type === "sales_out" && record.relatedOrderId) {
+      deletingOrderIdRef.current = record.relatedOrderId;
+    } else {
+      deletingOrderIdRef.current = null;
+    }
     deleteMutation.mutate({ id: record.id });
   };
 
@@ -429,7 +449,15 @@ export default function OutboundPage() {
           onSuccess: () => {
             successCount++;
             if (successCount + errorCount === total) {
-              refetch();
+              // 所有明细全部插入完成，统一触发一次订单状态同步
+              if (formData.relatedOrderId && formData.type === "sales_out") {
+                syncShipmentStatusMutation.mutate(
+                  { orderId: Number(formData.relatedOrderId) },
+                  { onSettled: () => { refetch(); } }
+                );
+              } else {
+                refetch();
+              }
               setFormOpen(false);
               if (errorCount > 0) {
                 toast.warning(`${successCount} 条创建成功，${errorCount} 条失败`);

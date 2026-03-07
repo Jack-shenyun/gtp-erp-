@@ -69,7 +69,7 @@ import {
   ensureUsersAvatarUrlColumn,
 } from "./db";
 import { getDb } from "./db";
-import { orderApprovals, salesOrders as salesOrdersTable, users, documents,
+import { orderApprovals, salesOrders as salesOrdersTable, salesOrderItems, inventoryTransactions, users, documents,
   accountsReceivable as accountsReceivableTable,
   customers as customersTable,
   materialRequests as materialRequestsTable, customsDeclarations as customsTable,
@@ -1212,6 +1212,74 @@ export const appRouter = router({
       }))
       .query(async ({ input }) => {
         return await getLastSalePrices(input.customerId, input.productIds);
+      }),
+
+    // 重新计算并同步订单发货状态（在所有出库明细插入完成后由前端调用一次）
+    syncShipmentStatus: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        // 查询订单明细
+        const orderItems = await db
+          .select()
+          .from(salesOrderItems)
+          .where(eq(salesOrderItems.orderId, input.orderId));
+
+        if (orderItems.length === 0) {
+          return { status: "shipped", message: "订单无明细" };
+        }
+
+        // 按产品汇总已出库数量
+        const txRows = await db
+          .select()
+          .from(inventoryTransactions)
+          .where(
+            and(
+              eq(inventoryTransactions.relatedOrderId, input.orderId),
+              eq(inventoryTransactions.type, "sales_out")
+            )
+          );
+
+        const deliveredMap = new Map<number, number>();
+        for (const tx of txRows) {
+          if (tx.productId) {
+            deliveredMap.set(
+              tx.productId,
+              (deliveredMap.get(tx.productId) || 0) + (parseFloat(String(tx.quantity)) || 0)
+            );
+          }
+        }
+
+        // 更新每条明细的 deliveredQty
+        for (const item of orderItems) {
+          const delivered = deliveredMap.get(item.productId) || 0;
+          await db
+            .update(salesOrderItems)
+            .set({ deliveredQty: String(delivered) })
+            .where(eq(salesOrderItems.id, item.id));
+        }
+
+        // 判断订单整体状态
+        const totalOrdered = orderItems.reduce((s, i) => s + (parseFloat(String(i.quantity)) || 0), 0);
+        const totalDelivered = orderItems.reduce((s, i) => s + (deliveredMap.get(i.productId) || 0), 0);
+
+        let newStatus: string;
+        if (totalDelivered <= 0) {
+          newStatus = "approved";
+        } else if (totalDelivered >= totalOrdered) {
+          newStatus = "completed";
+        } else {
+          newStatus = "partial_shipped";
+        }
+
+        await db
+          .update(salesOrdersTable)
+          .set({ status: newStatus as any })
+          .where(eq(salesOrdersTable.id, input.orderId));
+
+        return { status: newStatus, totalOrdered, totalDelivered };
       }),
   }),
   // ==================== 采购订单 =====================
