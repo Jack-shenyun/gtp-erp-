@@ -4572,12 +4572,13 @@ export async function deleteMaterialRequisitionOrder(id: number, deletedBy?: num
 }
 
 // ==================== 生产记录单 CRUD ====================
-export async function getProductionRecords(params?: { search?: string; status?: string; productionOrderId?: number; limit?: number; offset?: number }) {
+export async function getProductionRecords(params?: { search?: string; status?: string; recordType?: string; productionOrderId?: number; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return [];
   const conditions: any[] = [];
   if (params?.search) conditions.push(or(like(productionRecords.recordNo, `%${params.search}%`), like(productionRecords.productName, `%${params.search}%`), like(productionRecords.batchNo, `%${params.search}%`)));
   if (params?.status) conditions.push(eq(productionRecords.status, params.status as any));
+  if (params?.recordType) conditions.push(eq(productionRecords.recordType, params.recordType as any));
   if (params?.productionOrderId) conditions.push(eq(productionRecords.productionOrderId, params.productionOrderId));
   let query = db.select().from(productionRecords);
   if (conditions.length > 0) query = query.where(and(...conditions)) as typeof query;

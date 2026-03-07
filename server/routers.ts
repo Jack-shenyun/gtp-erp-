@@ -77,8 +77,9 @@ import { orderApprovals, salesOrders as salesOrdersTable, users, documents,
   trainings as trainingsTable, personnel as personnelTable,
   expenseReimbursements as expensesTable, paymentRecords as paymentRecordsTable,
   overtimeRequests as overtimeTable, leaveRequests as leaveTable, outingRequests as outingTable,
+  udiLabels,
 } from "../drizzle/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, like, and, or } from "drizzle-orm";
 
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -3217,7 +3218,7 @@ export const appRouter = router({
 
   // ==================== 领料单 ====================
   materialRequisitionOrders: router({
-    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), recordType: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
       return await getMaterialRequisitionOrders(input);
     }),
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
@@ -3259,7 +3260,7 @@ export const appRouter = router({
 
   // ==================== 生产记录单 ====================
   productionRecords: router({
-    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), recordType: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
       return await getProductionRecords(input);
     }),
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
@@ -3391,7 +3392,7 @@ export const appRouter = router({
 
   // ==================== 生产流转单 ====================
   productionRoutingCards: router({
-    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), recordType: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
       return await getProductionRoutingCards(input);
     }),
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
@@ -3434,7 +3435,7 @@ export const appRouter = router({
 
   // ==================== 委外灭菌单 ====================
   sterilizationOrders: router({
-    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), recordType: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
       return await getSterilizationOrders(input);
     }),
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
@@ -3498,7 +3499,7 @@ export const appRouter = router({
 
   // ==================== 生产入库申请 ====================
   productionWarehouseEntries: router({
-    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), status: z.string().optional(), recordType: z.string().optional(), productionOrderId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional()).query(async ({ input }) => {
       return await getProductionWarehouseEntries(input);
     }),
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
@@ -3797,6 +3798,206 @@ export const appRouter = router({
           updatedAt: p.updatedAt ? new Date(p.updatedAt).toISOString() : null,
         }));
       }),
+  }),
+
+  // ==================== UDI 标签管理 ====================
+  udi: router({
+    list: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        status: z.string().optional(),
+        productId: z.number().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const conditions: any[] = [];
+        if (input?.search) {
+          conditions.push(or(
+            like(udiLabels.labelNo, `%${input.search}%`),
+            like(udiLabels.productName, `%${input.search}%`),
+            like(udiLabels.udiDi, `%${input.search}%`),
+            like(udiLabels.batchNo, `%${input.search}%`),
+          ));
+        }
+        if (input?.status) conditions.push(eq(udiLabels.status, input.status as any));
+        if (input?.productId) conditions.push(eq(udiLabels.productId, input.productId));
+        const rows = await db.select().from(udiLabels)
+          .where(conditions.length ? and(...conditions) : undefined)
+          .orderBy(desc(udiLabels.createdAt))
+          .limit(input?.limit ?? 100)
+          .offset(input?.offset ?? 0);
+        return rows.map((r: any) => ({
+          ...r,
+          productionDate: r.productionDate ? String(r.productionDate).split('T')[0] : null,
+          expiryDate: r.expiryDate ? String(r.expiryDate).split('T')[0] : null,
+          printDate: r.printDate ? new Date(r.printDate).toISOString() : null,
+          nmpaSubmitDate: r.nmpaSubmitDate ? new Date(r.nmpaSubmitDate).toISOString() : null,
+          createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+          updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null,
+        }));
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const [row] = await db.select().from(udiLabels).where(eq(udiLabels.id, input.id));
+        if (!row) throw new Error("UDI记录不存在");
+        return {
+          ...row,
+          productionDate: row.productionDate ? String(row.productionDate).split('T')[0] : null,
+          expiryDate: row.expiryDate ? String(row.expiryDate).split('T')[0] : null,
+          printDate: row.printDate ? new Date(row.printDate).toISOString() : null,
+          nmpaSubmitDate: row.nmpaSubmitDate ? new Date(row.nmpaSubmitDate).toISOString() : null,
+          createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
+          updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+        };
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        productId: z.number().optional(),
+        productName: z.string().optional(),
+        productCode: z.string().optional(),
+        specification: z.string().optional(),
+        registrationNo: z.string().optional(),
+        riskLevel: z.enum(["I", "II", "III"]).optional(),
+        udiDi: z.string().min(1, "UDI-DI不能为空"),
+        issuer: z.enum(["GS1", "HIBC", "ICCBBA", "OTHER"]).optional(),
+        batchNo: z.string().optional(),
+        serialNo: z.string().optional(),
+        productionDate: z.string().optional(),
+        expiryDate: z.string().optional(),
+        carrierType: z.enum(["datamatrix", "gs1_128", "qr_code", "rfid"]).optional(),
+        labelTemplate: z.enum(["single", "double", "box", "pallet"]).optional(),
+        printQty: z.number().optional(),
+        remark: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const now = new Date();
+        const prefix = `UDI${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+        const [lastRow] = await db.select({ labelNo: udiLabels.labelNo })
+          .from(udiLabels)
+          .where(like(udiLabels.labelNo, `${prefix}%`))
+          .orderBy(desc(udiLabels.labelNo))
+          .limit(1);
+        const seq = lastRow ? (parseInt(lastRow.labelNo.slice(-4)) + 1) : 1;
+        const labelNo = `${prefix}${String(seq).padStart(4, '0')}`;
+        await db.insert(udiLabels).values({
+          labelNo,
+          productId: input.productId ?? null,
+          productName: input.productName ?? null,
+          productCode: input.productCode ?? null,
+          specification: input.specification ?? null,
+          registrationNo: input.registrationNo ?? null,
+          riskLevel: input.riskLevel ?? null,
+          udiDi: input.udiDi,
+          issuer: input.issuer ?? "GS1",
+          batchNo: input.batchNo ?? null,
+          serialNo: input.serialNo ?? null,
+          productionDate: input.productionDate ? new Date(input.productionDate) : null,
+          expiryDate: input.expiryDate ? new Date(input.expiryDate) : null,
+          carrierType: input.carrierType ?? "datamatrix",
+          labelTemplate: input.labelTemplate ?? "single",
+          printQty: input.printQty ?? 1,
+          remark: input.remark ?? null,
+          createdBy: ctx.user?.id ?? null,
+        } as any);
+        return { success: true, labelNo };
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        productId: z.number().optional(),
+        productName: z.string().optional(),
+        productCode: z.string().optional(),
+        specification: z.string().optional(),
+        registrationNo: z.string().optional(),
+        riskLevel: z.enum(["I", "II", "III"]).optional(),
+        udiDi: z.string().optional(),
+        issuer: z.enum(["GS1", "HIBC", "ICCBBA", "OTHER"]).optional(),
+        batchNo: z.string().optional(),
+        serialNo: z.string().optional(),
+        productionDate: z.string().optional().nullable(),
+        expiryDate: z.string().optional().nullable(),
+        carrierType: z.enum(["datamatrix", "gs1_128", "qr_code", "rfid"]).optional(),
+        labelTemplate: z.enum(["single", "double", "box", "pallet"]).optional(),
+        printQty: z.number().optional(),
+        status: z.enum(["pending", "printing", "printed", "used", "recalled"]).optional(),
+        remark: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const { id, productionDate, expiryDate, ...rest } = input;
+        await db.update(udiLabels).set({
+          ...rest,
+          productionDate: productionDate ? new Date(productionDate) : undefined,
+          expiryDate: expiryDate ? new Date(expiryDate) : undefined,
+        } as any).where(eq(udiLabels.id, id));
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        await db.delete(udiLabels).where(eq(udiLabels.id, input.id));
+        return { success: true };
+      }),
+
+    confirmPrint: protectedProcedure
+      .input(z.object({ id: z.number(), printedQty: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        await db.update(udiLabels).set({
+          status: "printed",
+          printedQty: input.printedQty,
+          printDate: new Date(),
+          printedBy: ctx.user?.id ?? null,
+        } as any).where(eq(udiLabels.id, input.id));
+        return { success: true };
+      }),
+
+    submitNmpa: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        await db.update(udiLabels).set({
+          nmpaSubmitted: true,
+          nmpaSubmitDate: new Date(),
+        } as any).where(eq(udiLabels.id, input.id));
+        return { success: true };
+      }),
+
+    stats: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const rows = await db.select({
+        status: udiLabels.status,
+        count: sql<number>`count(*)`,
+      }).from(udiLabels).groupBy(udiLabels.status);
+      const result: Record<string, number> = {};
+      rows.forEach((r: any) => { result[r.status] = Number(r.count); });
+      return {
+        total: Object.values(result).reduce((a, b) => a + b, 0),
+        pending: result['pending'] ?? 0,
+        printing: result['printing'] ?? 0,
+        printed: result['printed'] ?? 0,
+        used: result['used'] ?? 0,
+        recalled: result['recalled'] ?? 0,
+      };
+    }),
   }),
 });
 export type AppRouter = typeof appRouter;

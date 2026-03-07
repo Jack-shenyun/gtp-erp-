@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "@solidjs/router";
+import { useLocation } from "wouter";
 import ERPLayout from "@/components/ERPLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,7 +113,7 @@ const PRESET_TEMPLATES: LabelTemplate[] = [
 ];
 
 export default function LabelDesignerPage() {
-  const navigate = useNavigate();
+  const [, navigate] = useLocation();
   const canvasRef = useRef<HTMLDivElement>(null);
   const [template, setTemplate] = useState<LabelTemplate>(defaultTemplate());
   const [selectedId, setSelectedId] = useState<string | null>(null);
