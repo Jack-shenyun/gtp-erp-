@@ -168,12 +168,14 @@ export default function OutboundPage() {
   const { data: warehouseList = [] } = trpc.warehouses.list.useQuery({ status: "active" });
   const { data: productList = [] }   = trpc.products.list.useQuery({ limit: 1000 });
 
-  // 销售订单列表（已审批 + 待发货 状态）
-  const { data: approvedOrders = [] } = trpc.salesOrders.list.useQuery({ status: "approved", limit: 200 });
-  const { data: readyOrders = [] }    = trpc.salesOrders.list.useQuery({ status: "ready_to_ship", limit: 200 });
+  // 销售订单列表（已审批 + 待发货 + 部分发货 状态）
+  const { data: approvedOrders = [] }       = trpc.salesOrders.list.useQuery({ status: "approved", limit: 200 });
+  const { data: readyOrders = [] }          = trpc.salesOrders.list.useQuery({ status: "ready_to_ship", limit: 200 });
+  const { data: partialShippedOrders = [] } = trpc.salesOrders.list.useQuery({ status: "partial_shipped", limit: 200 });
   const salesOrderList: SalesOrderOption[] = [
     ...(approvedOrders as SalesOrderOption[]),
     ...(readyOrders as SalesOrderOption[]),
+    ...(partialShippedOrders as SalesOrderOption[]),
   ];
 
   // 库存列表（用于获取批号）
