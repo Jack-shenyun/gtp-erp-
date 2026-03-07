@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -23,7 +24,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { DraggableDialog } from "@/components/DraggableDialog";
+import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import {
   Table,
   TableBody,
@@ -127,6 +128,7 @@ export default function OutboundPage() {
 
   // ---- 对话框状态 ----
   const [formOpen, setFormOpen]               = useState(false);
+  const [formMaximized, setFormMaximized]     = useState(false);
   const [detailOpen, setDetailOpen]           = useState(false);
   const [editingRecord, setEditingRecord]     = useState<OutboundRecord | null>(null);
   const [viewingRecord, setViewingRecord]     = useState<OutboundRecord | null>(null);
@@ -599,109 +601,127 @@ export default function OutboundPage() {
       </div>
 
       {/* ==================== 新建/编辑出库单对话框 ==================== */}
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DraggableDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        defaultWidth={920}
+        defaultHeight={720}
+        isMaximized={formMaximized}
+        onMaximizedChange={setFormMaximized}
+      >
+        <DraggableDialogContent isMaximized={formMaximized}>
           <DialogHeader>
             <DialogTitle>{editingRecord ? "编辑出库单" : "新建出库单"}</DialogTitle>
+            {!editingRecord && formData.documentNo && (
+              <p className="text-sm text-muted-foreground">单据号：{formData.documentNo}</p>
+            )}
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            {/* 第一行：出库单号 + 出库类型 + 出库仓库 */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label>出库单号</Label>
-                <Input
-                  value={formData.documentNo}
-                  onChange={(e) => setFormData((p) => ({ ...p, documentNo: e.target.value }))}
-                  placeholder="系统自动生成或手动输入"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>出库类型 <span className="text-destructive">*</span></Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(v) => {
-                    setFormData((p) => ({ ...p, type: v, relatedOrderId: "" }));
-                    setDetailLines([]);
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {outboundTypeOptions.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>出库仓库 <span className="text-destructive">*</span></Label>
-                <Select
-                  value={formData.warehouseId}
-                  onValueChange={(v) => setFormData((p) => ({ ...p, warehouseId: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="请选择仓库" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(warehouseList as any[]).map((w: any) => (
-                      <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <div className="space-y-6 py-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+            {/* 基本信息 */}
+            <div>
+              <h3 className="text-sm font-medium mb-3">基本信息</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>出库单号</Label>
+                  <Input
+                    value={formData.documentNo}
+                    onChange={(e) => setFormData((p) => ({ ...p, documentNo: e.target.value }))}
+                    placeholder="系统自动生成或手动输入"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>出库类型 <span className="text-destructive">*</span></Label>
+                  <Select
+                    value={formData.type}
+                    onValueChange={(v) => {
+                      setFormData((p) => ({ ...p, type: v, relatedOrderId: "" }));
+                      setDetailLines([]);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {outboundTypeOptions.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>出库仓库 <span className="text-destructive">*</span></Label>
+                  <Select
+                    value={formData.warehouseId}
+                    onValueChange={(v) => setFormData((p) => ({ ...p, warehouseId: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="请选择仓库" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(warehouseList as any[]).map((w: any) => (
+                        <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
             {/* 关联销售订单（仅销售出库显示） */}
             {formData.type === "sales_out" && (
-              <div className="space-y-1.5">
-                <Label>关联销售订单</Label>
-                <div className="flex gap-2">
-                  <Input
-                    readOnly
-                    value={
-                      formData.relatedOrderId
-                        ? (() => {
-                            const o = salesOrderList.find(
-                              (x) => x.id === Number(formData.relatedOrderId)
-                            );
-                            return o
-                              ? `${o.orderNo}${o.customerName ? ` - ${o.customerName}` : ""}`
-                              : `#${formData.relatedOrderId}`;
-                          })()
-                        : ""
-                    }
-                    placeholder="点击右侧按钮选择销售订单"
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setSoDialogOpen(true)}
-                  >
-                    选择订单
-                  </Button>
-                  {formData.relatedOrderId && (
+              <>
+                <Separator />
+                <div>
+                  <h3 className="text-sm font-medium mb-3">关联销售订单</h3>
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      value={
+                        formData.relatedOrderId
+                          ? (() => {
+                              const o = salesOrderList.find(
+                                (x) => x.id === Number(formData.relatedOrderId)
+                              );
+                              return o
+                                ? `${o.orderNo}${o.customerName ? ` - ${o.customerName}` : ""}`
+                                : `#${formData.relatedOrderId}`;
+                            })()
+                          : ""
+                      }
+                      placeholder="点击右侧按钮选择销售订单，选择后自动加载产品明细"
+                      className="flex-1"
+                    />
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setFormData((p) => ({ ...p, relatedOrderId: "" }));
-                        setDetailLines([]);
-                      }}
+                      variant="outline"
+                      onClick={() => setSoDialogOpen(true)}
                     >
-                      <X className="h-4 w-4" />
+                      选择订单
                     </Button>
-                  )}
+                    {formData.relatedOrderId && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setFormData((p) => ({ ...p, relatedOrderId: "" }));
+                          setDetailLines([]);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
 
+            <Separator />
+
             {/* ==================== 出库明细表 ==================== */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-base font-semibold">出库明细</Label>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium">出库明细 <span className="text-destructive">*</span></h3>
                 {formData.type !== "sales_out" && (
                   <Button
                     type="button"
@@ -899,8 +919,10 @@ export default function OutboundPage() {
               )}
             </div>
 
+            <Separator />
+
             {/* 备注 */}
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label>备注</Label>
               <Textarea
                 value={formData.remark}
@@ -919,8 +941,8 @@ export default function OutboundPage() {
               {editingRecord ? "保存修改" : "创建出库单"}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DraggableDialogContent>
+      </DraggableDialog>
 
       {/* ==================== 销售订单选择弹窗 ==================== */}
       <Dialog open={soDialogOpen} onOpenChange={setSoDialogOpen}>
@@ -992,7 +1014,7 @@ export default function OutboundPage() {
                   ))
                 )}
               </TableBody>
-            </Table>
+              </div>
           </div>
         </DialogContent>
       </Dialog>
