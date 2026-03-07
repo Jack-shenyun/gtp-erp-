@@ -116,6 +116,14 @@ export default function UsersPage() {
       utils.auth.me.setData(undefined, nextUser);
       if (typeof window !== "undefined") {
         localStorage.setItem("manus-runtime-user-info", JSON.stringify(nextUser));
+        // 同步更新本地登录用户信息，确保刷新后头像持久化
+        const localAuthRaw = localStorage.getItem(LOCAL_AUTH_USER_KEY);
+        if (localAuthRaw) {
+          try {
+            const localAuth = JSON.parse(localAuthRaw);
+            localStorage.setItem(LOCAL_AUTH_USER_KEY, JSON.stringify({ ...localAuth, avatarUrl: data.avatarUrl }));
+          } catch {}
+        }
       }
     },
     onError: (error) => toast.error(`上传失败：${error.message}`),
