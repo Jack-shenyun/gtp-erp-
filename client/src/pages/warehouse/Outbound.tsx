@@ -273,11 +273,12 @@ export default function OutboundPage() {
 
   // 获取某个产品在指定仓库的可用批号列表
   const getBatchOptions = (productId: number, warehouseId: number) => {
+    // 显示该产品在该仓库的所有批次记录（包括库存为 0 或负数的情况），
+    // 以支持流程倒置（如退货、调整）或库存修正场景
     return (inventoryList as any[]).filter(
       (inv: any) =>
         inv.productId === productId &&
-        inv.warehouseId === warehouseId &&
-        parseFloat(inv.quantity || "0") > 0
+        inv.warehouseId === warehouseId
     );
   };
 
