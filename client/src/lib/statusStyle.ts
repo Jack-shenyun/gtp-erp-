@@ -22,9 +22,14 @@ export function getStatusSemanticClass(status: unknown, label?: unknown): string
     return "border-transparent bg-blue-600 text-white";
   }
 
+  // 已审批：橙黄色（待处理状态）
+  if (statusStr === "approved" || labelStr === "已审批") {
+    return "border-transparent bg-amber-500 text-black";
+  }
+
   // 完成/通过/合格：绿色
   const isDone =
-    /完成|已完成|已收款|已付款|已通过|合格|已审批|approved|completed|done|paid|received|qualified|pass|active/.test(
+    /完成|已完成|已收款|已付款|已通过|合格|completed|done|paid|received|qualified|pass|active/.test(
       text
     );
   if (isDone) {

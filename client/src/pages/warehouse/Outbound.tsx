@@ -235,24 +235,14 @@ export default function OutboundPage() {
     onSuccess: () => { toast.success("出库单已更新"); refetch(); setFormOpen(false); },
     onError: (e) => toast.error("更新失败：" + e.message),
   });
+  const syncShipmentStatusMutation = trpc.salesOrders.syncShipmentStatus.useMutation();
   const deleteMutation = trpc.inventoryTransactions.delete.useMutation({
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       toast.success("出库单已删除");
-      // 删除后同步订单状态（通过 deletingOrderId 传入）
-      if (deletingOrderIdRef.current) {
-        syncShipmentStatusMutation.mutate(
-          { orderId: deletingOrderIdRef.current },
-          { onSettled: () => { refetch(); deletingOrderIdRef.current = null; } }
-        );
-      } else {
-        refetch();
-      }
+      refetch();
     },
     onError: (e) => toast.error("删除失败：" + e.message),
   });
-  const syncShipmentStatusMutation = trpc.salesOrders.syncShipmentStatus.useMutation();
-  // 删除时临时存储关联订单 ID，用于删除完成后触发状态同步
-  const deletingOrderIdRef = useRef<number | null>(null);
   // ==================== 辅助函数 ====================
   const getWarehouseName = (warehouseId: number) => {
     const wh = (warehouseList as any[]).find((w: any) => w.id === warehouseId);
@@ -358,13 +348,14 @@ export default function OutboundPage() {
 
   const handleDelete = (record: OutboundRecord) => {
     if (!canDelete) { toast.error("您没有删除权限"); return; }
-    // 如果是销售出库且有关联订单，记录订单 ID 以便删除后同步状态
-    if (record.type === "sales_out" && record.relatedOrderId) {
-      deletingOrderIdRef.current = record.relatedOrderId;
-    } else {
-      deletingOrderIdRef.current = null;
-    }
-    deleteMutation.mutate({ id: record.id });
+    // 删除出库记录，删除成功后如果是 sales_out 且有关联订单，立即触发状态同步
+    deleteMutation.mutate({ id: record.id }, {
+      onSuccess: () => {
+        if (record.type === "sales_out" && record.relatedOrderId) {
+          syncShipmentStatusMutation.mutate({ orderId: record.relatedOrderId });
+        }
+      },
+    });
   };
 
   // 选择销售订单后自动填充
