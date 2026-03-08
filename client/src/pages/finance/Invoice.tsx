@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { trpc } from "@/lib/trpc";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import {
 import { toast } from "sonner";
 import {
   FileText, Plus, MoreHorizontal, Eye, Edit, Trash2,
-  Download, Search, Receipt, Send,
+  Download, Search, Receipt, Send, Upload, Loader2, CheckCircle2, XCircle,
 } from "lucide-react";
 
 // ==================== 类型定义 ====================
@@ -117,6 +118,50 @@ function ReceivedInvoiceTab() {
   const [editing, setEditing] = useState<ReceivedInvoice | null>(null);
   const [viewing, setViewing] = useState<ReceivedInvoice | null>(null);
   const [form, setForm] = useState<Partial<ReceivedInvoice>>({});
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrProvider, setOcrProvider] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognizeMutation = trpc.invoiceOcr.recognize.useMutation();
+
+  const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setOcrLoading(true);
+    setOcrProvider("");
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const results = await recognizeMutation.mutateAsync({ images: [{ name: file.name, base64 }] });
+      const result = results[0];
+      if (result?.success && result.data) {
+        const d = result.data;
+        setOcrProvider(result.provider || "");
+        setForm(f => ({
+          ...f,
+          invoiceNo: d.invoiceNo || f.invoiceNo,
+          invoiceDate: d.invoiceDate || f.invoiceDate,
+          supplierName: d.sellerName || f.supplierName,
+          amountExTax: d.amountExTax ?? f.amountExTax,
+          taxRate: d.taxRate ?? f.taxRate,
+          taxAmount: d.taxAmount ?? f.taxAmount,
+          totalAmount: d.totalAmount ?? f.totalAmount,
+          invoiceType: (d.invoiceType as InvoiceType) || f.invoiceType,
+        }));
+        toast.success(`AI识别成功（${result.provider}）`);
+      } else {
+        toast.error(result?.error || "识别失败，请手动填写");
+      }
+    } catch (err: any) {
+      toast.error("识别请求失败：" + err.message);
+    } finally {
+      setOcrLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const filtered = records.filter(r => {
     const matchSearch = !search || r.invoiceNo.includes(search) || r.supplierName.includes(search) || r.relatedOrderNo.includes(search);
@@ -256,6 +301,15 @@ function ReceivedInvoiceTab() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>{editing ? "编辑收票" : "登记收票"}</DialogTitle></DialogHeader>
+          {/* AI 识别上传区 */}
+          <div className="border-2 border-dashed border-muted rounded-lg p-4 text-center bg-muted/30">
+            <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} />
+            <Button type="button" variant="outline" size="sm" disabled={ocrLoading} onClick={() => fileInputRef.current?.click()}>
+              {ocrLoading ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />AI识别中...</> : <><Upload className="h-4 w-4 mr-1.5" />上传发票自动识别（图片/PDF）</>}
+            </Button>
+            {ocrProvider && <p className="text-xs text-green-600 mt-1.5 flex items-center justify-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />已由 {ocrProvider} 识别，请核对以下信息</p>}
+            <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、PDF，上传后自动填入表单</p>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>发票号码 *</Label>
@@ -366,6 +420,49 @@ function IssuedInvoiceTab() {
   const [editing, setEditing] = useState<IssuedInvoice | null>(null);
   const [viewing, setViewing] = useState<IssuedInvoice | null>(null);
   const [form, setForm] = useState<Partial<IssuedInvoice>>({});
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrProvider, setOcrProvider] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognizeMutation = trpc.invoiceOcr.recognize.useMutation();
+
+  const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setOcrLoading(true);
+    setOcrProvider("");
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const results = await recognizeMutation.mutateAsync({ images: [{ name: file.name, base64 }] });
+      const result = results[0];
+      if (result?.success && result.data) {
+        const d = result.data;
+        setOcrProvider(result.provider || "");
+        setForm(f => ({
+          ...f,
+          invoiceNo: d.invoiceNo || f.invoiceNo,
+          invoiceDate: d.invoiceDate || f.invoiceDate,
+          amountExTax: d.amountExTax ?? f.amountExTax,
+          taxRate: d.taxRate ?? f.taxRate,
+          taxAmount: d.taxAmount ?? f.taxAmount,
+          totalAmount: d.totalAmount ?? f.totalAmount,
+          invoiceType: (d.invoiceType as InvoiceType) || f.invoiceType,
+        }));
+        toast.success(`AI识别成功（${result.provider}）`);
+      } else {
+        toast.error(result?.error || "识别失败，请手动填写");
+      }
+    } catch (err: any) {
+      toast.error("识别请求失败：" + err.message);
+    } finally {
+      setOcrLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const filtered = records.filter(r => {
     const matchSearch = !search || (r.invoiceNo && r.invoiceNo.includes(search)) || r.customerName.includes(search) || r.relatedOrderNo.includes(search);
@@ -502,6 +599,15 @@ function IssuedInvoiceTab() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>{editing ? "编辑开票" : "新建开票"}</DialogTitle></DialogHeader>
+          {/* AI 识别上传区 */}
+          <div className="border-2 border-dashed border-muted rounded-lg p-4 text-center bg-muted/30">
+            <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} />
+            <Button type="button" variant="outline" size="sm" disabled={ocrLoading} onClick={() => fileInputRef.current?.click()}>
+              {ocrLoading ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />AI识别中...</> : <><Upload className="h-4 w-4 mr-1.5" />上传发票自动识别（图片/PDF）</>}
+            </Button>
+            {ocrProvider && <p className="text-xs text-green-600 mt-1.5 flex items-center justify-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />已由 {ocrProvider} 识别，请核对以下信息</p>}
+            <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、PDF，上传后自动填入表单</p>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>客户名称 *</Label>
