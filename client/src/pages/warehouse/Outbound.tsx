@@ -456,7 +456,7 @@ export default function OutboundPage() {
         onOpenChange={setFormOpen}
         title={editingRecord ? "编辑出库单" : "新建出库单"}
         description={editingRecord ? "修改出库单信息" : "填写出库单基本信息"}
-        fields={buildFormFields()}
+        fields={getFormFields()}
         initialData={editingRecord ? {
           ...editingRecord,
           productId: getInitialProductId(editingRecord),
