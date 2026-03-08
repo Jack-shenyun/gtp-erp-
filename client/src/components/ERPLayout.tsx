@@ -194,10 +194,7 @@ const menuConfig = [
       { icon: Warehouse, label: "生产入库申请", path: "/production/warehouse-entry" },
       { icon: Layers, label: "BOM物料清单", path: "/production/bom" },
       { icon: GitBranch, label: "MRP物料计划", path: "/production/mrp" },
-      { icon: Archive, label: "UDI档案", path: "/production/udi/archive" },
-      { icon: QrCode, label: "标签设计器", path: "/production/udi/designer" },
       { icon: Printer, label: "标签打印", path: "/production/udi/print" },
-      { icon: Upload, label: "UDI上报", path: "/production/udi/report" },
       { icon: Wrench, label: "设备管理", path: "/production/equipment" },
       { icon: Thermometer, label: "生产环境管理", path: "/production/environment" },
       { icon: Settings2, label: "生产工序管理", path: "/production/process" },
@@ -252,6 +249,17 @@ const menuConfig = [
       { icon: Wallet, label: "账户管理", path: "/finance/accounts" },
       { icon: TrendingUp, label: "成本核算", path: "/finance/cost" },
       { icon: FileSpreadsheet, label: "报表中心", path: "/finance/reports" },
+    ],
+  },
+  {
+    id: "udi",
+    icon: QrCode,
+    label: "UDI管理",
+    children: [
+      { icon: Archive, label: "UDI档案", path: "/production/udi/archive" },
+      { icon: QrCode, label: "标签设计器", path: "/production/udi/designer" },
+      { icon: Printer, label: "标签打印", path: "/production/udi/print" },
+      { icon: Upload, label: "UDI上报", path: "/production/udi/report" },
     ],
   },
   {
