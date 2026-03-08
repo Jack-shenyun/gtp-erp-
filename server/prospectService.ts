@@ -7,7 +7,8 @@
  *       LinkedIn（间接）  → 通过 Apollo 数据覆盖
  */
 
-import fetch from "node-fetch";
+// 使用 Node.js 18+ 内置 fetch（无需 node-fetch）
+const fetchFn: typeof fetch = globalThis.fetch ?? (await import("node-fetch" as any)).default;
 
 // ─── 类型定义 ──────────────────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ export async function searchCompaniesByGoogle(
   const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(query)}&num=${Math.min(maxResults, 10)}`;
 
   try {
-    const res = await fetch(url);
+    const res = await fetchFn(url);
     const data: any = await res.json();
 
     if (!data.items) return [];
@@ -114,7 +115,7 @@ export async function enrichContactsByApollo(
 
   try {
     // Step 1: 搜索该域名下的联系人
-    const searchRes = await fetch("https://api.apollo.io/v1/mixed_people/search", {
+    const searchRes = await fetchFn("https://api.apollo.io/v1/mixed_people/search", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -168,7 +169,7 @@ export async function findEmailsByHunter(domain: string): Promise<ProspectContac
 
   try {
     const url = `https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${apiKey}&limit=10`;
-    const res = await fetch(url);
+    const res = await fetchFn(url);
     const data: any = await res.json();
 
     if (!data.data?.emails?.length) return [];
@@ -207,7 +208,7 @@ export async function syncLeadsFromHubSpot(limit: number = 50): Promise<Prospect
 
   try {
     const url = `https://api.hubapi.com/crm/v3/objects/contacts?limit=${limit}&properties=firstname,lastname,email,phone,jobtitle,company,hs_linkedin_url`;
-    const res = await fetch(url, {
+    const res = await fetchFn(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data: any = await res.json();
@@ -255,7 +256,7 @@ export async function pushLeadToHubSpot(contact: {
   }
 
   try {
-    const res = await fetch("https://api.hubapi.com/crm/v3/objects/contacts", {
+    const res = await fetchFn("https://api.hubapi.com/crm/v3/objects/contacts", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
