@@ -5785,7 +5785,7 @@ export async function createIqcInspection(data: {
   supplierId?: number; supplierName?: string; supplierCode?: string; batchNo?: string; sterilizationBatchNo?: string;
   receivedQty?: string; sampleQty?: string; qualifiedQty?: string; unit?: string;
   inspectionRequirementId?: number; inspectionDate?: string;
-  inspectorId?: number; inspectorName?: string; result?: string; remark?: string; attachments?: string; createdBy?: number;
+  inspectorId?: number; inspectorName?: string; result?: string; remark?: string; attachments?: string; signatures?: string; createdBy?: number;
   items: Array<{
     requirementItemId?: number; itemName: string; itemType: string; standard?: string;
     minValue?: string; maxValue?: string; unit?: string; measuredValue?: string; sampleValues?: string;

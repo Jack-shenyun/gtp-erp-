@@ -4711,6 +4711,7 @@ export const appRouter = router({
         result: z.string().optional(),
         remark: z.string().optional(),
         attachments: z.string().optional(),
+        signatures: z.string().optional(),
         items: z.array(z.object({
           requirementItemId: z.number().optional(),
           itemName: z.string(),
