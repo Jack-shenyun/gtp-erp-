@@ -1606,6 +1606,10 @@ export const appRouter = router({
         relatedDocNo: z.string().optional(),
         itemName: z.string(),
         batchNo: z.string().optional(),
+        productionOrderId: z.number().optional(),
+        productionOrderNo: z.string().optional(),
+        sterilizationOrderId: z.number().optional(),
+        sterilizationOrderNo: z.string().optional(),
         sampleQty: z.string().optional(),
         inspectedQty: z.string().optional(),
         qualifiedQty: z.string().optional(),
@@ -1633,6 +1637,10 @@ export const appRouter = router({
           relatedDocNo: z.string().optional(),
           itemName: z.string().optional(),
           batchNo: z.string().optional(),
+          productionOrderId: z.number().optional(),
+          productionOrderNo: z.string().optional(),
+          sterilizationOrderId: z.number().optional(),
+          sterilizationOrderNo: z.string().optional(),
           sampleQty: z.string().optional(),
           inspectedQty: z.string().optional(),
           qualifiedQty: z.string().optional(),
@@ -3901,6 +3909,56 @@ export const appRouter = router({
           createdAt: p.createdAt ? new Date(p.createdAt).toISOString() : null,
           updatedAt: p.updatedAt ? new Date(p.updatedAt).toISOString() : null,
         }));
+      }),
+
+    /**
+     * 一键生成采购申请单
+     * 将 MRP 运算结果中净需求 > 0 的物料，批量创建为一张采购申请单
+     */
+    generatePurchaseRequest: protectedProcedure
+      .input(z.object({
+        productionPlanId: z.number(),
+        planNo: z.string(),
+        productName: z.string(),
+        urgency: z.enum(["normal", "urgent", "critical"]).optional(),
+        items: z.array(z.object({
+          materialCode: z.string(),
+          materialName: z.string(),
+          specification: z.string().optional(),
+          unit: z.string().optional(),
+          netRequirement: z.number(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.items.length === 0) throw new Error("没有需要采购的物料");
+        const { materialRequests: mrTable, materialRequestItems: mriTable } = await import("../drizzle/schema");
+        const requestNo = await getNextOrderNo("MR", mrTable, mrTable.requestNo);
+        const today = new Date().toISOString().split("T")[0];
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const [inserted] = await db.insert(mrTable).values({
+          requestNo,
+          department: "生产部",
+          requesterId: ctx.user!.id,
+          requestDate: new Date(today) as any,
+          urgency: input.urgency || "normal",
+          reason: `MRP自动生成 — 生产计划 ${input.planNo}（${input.productName}）缺料申请`,
+          status: "draft",
+        });
+        const requestId = (inserted as any).insertId;
+        if (input.items.length > 0) {
+          await db.insert(mriTable).values(
+            input.items.map((item) => ({
+              requestId,
+              materialName: item.materialName,
+              specification: item.specification || "",
+              quantity: String(item.netRequirement) as any,
+              unit: item.unit || "",
+              remark: `物料编码: ${item.materialCode}`,
+            }))
+          );
+        }
+        return { requestId, requestNo };
       }),
   }),
 

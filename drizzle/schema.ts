@@ -426,6 +426,10 @@ export const qualityInspections = mysqlTable("quality_inspections", {
   relatedDocNo: varchar("relatedDocNo", { length: 50 }), // 关联单据号
   itemName: varchar("itemName", { length: 200 }).notNull(),
   batchNo: varchar("batchNo", { length: 50 }),
+  productionOrderId: int("productionOrderId"), // 关联生产指令ID
+  productionOrderNo: varchar("productionOrderNo", { length: 50 }), // 关联生产指令号
+  sterilizationOrderId: int("sterilizationOrderId"), // 关联灭菌单ID
+  sterilizationOrderNo: varchar("sterilizationOrderNo", { length: 50 }), // 关联灭菌单号
   sampleQty: decimal("sampleQty", { precision: 12, scale: 4 }), // 抽样数量
   inspectedQty: decimal("inspectedQty", { precision: 12, scale: 4 }), // 检验数量
   qualifiedQty: decimal("qualifiedQty", { precision: 12, scale: 4 }), // 合格数量
@@ -1445,7 +1449,8 @@ export const sterilizationOrders = mysqlTable("sterilization_orders", {
   sendDate: date("sendDate"),                  // 发出日期
   expectedReturnDate: date("expectedReturnDate"), // 预计返回日期
   actualReturnDate: date("actualReturnDate"),  // 实际返回日期
-  status: mysqlEnum("status", ["draft", "sent", "processing", "returned", "qualified", "unqualified"]).default("draft").notNull(),
+  sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }), // 灭菌批号（唯一，灭菌完成后补录）
+  status: mysqlEnum("status", ["draft", "sent", "processing", "arrived", "returned", "qualified", "unqualified"]).default("draft").notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1468,7 +1473,12 @@ export const productionWarehouseEntries = mysqlTable("production_warehouse_entri
   productId: int("productId"),
   productName: varchar("productName", { length: 200 }),
   batchNo: varchar("batchNo", { length: 50 }),
+  sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }), // 灭菌批号
+  sterilizedQty: decimal("sterilizedQty", { precision: 12, scale: 4 }), // 灭菌后数量
+  inspectionRejectQty: decimal("inspectionRejectQty", { precision: 12, scale: 4 }).default("0"), // 检验报废数量
+  sampleQty: decimal("sampleQty", { precision: 12, scale: 4 }).default("0"), // 留样数量
   quantity: decimal("quantity", { precision: 12, scale: 4 }),
+  quantityModifyReason: text("quantityModifyReason"), // 入库数量手动修改原因
   unit: varchar("unit", { length: 20 }),
   targetWarehouseId: int("targetWarehouseId"), // 目标入库仓库
   applicantId: int("applicantId"),

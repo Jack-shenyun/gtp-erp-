@@ -68,6 +68,9 @@ let workflowTemplatesTableReady = false;
 let companyInfoTableReady = false;
 let productsSterilizedColumnReady = false;
 let inventoryTransactionColumnsReady = false;
+let sterilizationOrderColumnsReady = false;
+let productionWarehouseEntryColumnsReady = false;
+let qualityInspectionColumnsReady = false;
 
 const WORKFLOW_FORM_CATALOG_SEED: InsertWorkflowFormCatalog[] = [
   { module: "通用", formType: "申请单", formName: "报销单", path: "/workflow/expense", sortOrder: 1, status: "active", approvalEnabled: false },
@@ -342,6 +345,72 @@ async function ensureInventoryTransactionColumns(dbArg?: ReturnType<typeof drizz
   }
 
   inventoryTransactionColumnsReady = true;
+}
+
+async function ensureSterilizationOrderColumns(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || sterilizationOrderColumnsReady) return;
+  try {
+    await db.execute(sql`ALTER TABLE sterilization_orders ADD COLUMN sterilizationBatchNo VARCHAR(50) NULL`);
+  } catch (error) {
+    const message = String((error as any)?.message ?? "");
+    if (!/Duplicate column name|already exists|1060|sterilizationBatchNo/i.test(message)) throw error;
+  }
+  // 添加 arrived 状态到枚举（MySQL不支持直接修改枚举，通过 MODIFY COLUMN 实现）
+  try {
+    await db.execute(sql`ALTER TABLE sterilization_orders MODIFY COLUMN status ENUM('draft','sent','processing','arrived','returned','qualified','unqualified') NOT NULL DEFAULT 'draft'`);
+  } catch (error) {
+    const message = String((error as any)?.message ?? "");
+    if (!/arrived|already exists/i.test(message)) {
+      console.warn("[DB] Could not modify sterilization_orders status enum:", message);
+    }
+  }
+  sterilizationOrderColumnsReady = true;
+}
+
+async function ensureProductionWarehouseEntryColumns(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || productionWarehouseEntryColumnsReady) return;
+  const columns = [
+    { name: "sterilizationBatchNo", ddl: "VARCHAR(50) NULL" },
+    { name: "sterilizedQty", ddl: "DECIMAL(12,4) NULL" },
+    { name: "inspectionRejectQty", ddl: "DECIMAL(12,4) NULL DEFAULT 0" },
+    { name: "sampleQty", ddl: "DECIMAL(12,4) NULL DEFAULT 0" },
+    { name: "quantityModifyReason", ddl: "TEXT NULL" },
+  ];
+  for (const col of columns) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE production_warehouse_entries ADD COLUMN ${col.name} ${col.ddl}`));
+    } catch (error) {
+      const message = String((error as any)?.message ?? "");
+      if (!/Duplicate column name|already exists|1060/i.test(message)) {
+        console.warn(`[DB] Could not add column ${col.name} to production_warehouse_entries:`, message);
+      }
+    }
+  }
+  productionWarehouseEntryColumnsReady = true;
+}
+
+async function ensureQualityInspectionColumns(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || qualityInspectionColumnsReady) return;
+  const columns = [
+    { name: "productionOrderId", ddl: "INT NULL" },
+    { name: "productionOrderNo", ddl: "VARCHAR(50) NULL" },
+    { name: "sterilizationOrderId", ddl: "INT NULL" },
+    { name: "sterilizationOrderNo", ddl: "VARCHAR(50) NULL" },
+  ];
+  for (const col of columns) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE quality_inspections ADD COLUMN ${col.name} ${col.ddl}`));
+    } catch (error) {
+      const message = String((error as any)?.message ?? "");
+      if (!/Duplicate column name|already exists|1060/i.test(message)) {
+        console.warn(`[DB] Could not add column ${col.name} to quality_inspections:`, message);
+      }
+    }
+  }
+  qualityInspectionColumnsReady = true;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -1968,7 +2037,7 @@ export async function getQualityInspectionById(id: number) {
 export async function createQualityInspection(data: InsertQualityInspection) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
+  await ensureQualityInspectionColumns(db);
   const result = await db.insert(qualityInspections).values(data);
   return result[0].insertId;
 }
@@ -1976,7 +2045,7 @@ export async function createQualityInspection(data: InsertQualityInspection) {
 export async function updateQualityInspection(id: number, data: Partial<InsertQualityInspection>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
+  await ensureQualityInspectionColumns(db);
   await db.update(qualityInspections).set(data).where(eq(qualityInspections.id, id));
 }
 
@@ -4766,12 +4835,14 @@ export async function getSterilizationOrderById(id: number) {
 export async function createSterilizationOrder(data: InsertSterilizationOrder) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  await ensureSterilizationOrderColumns(db);
   const result = await db.insert(sterilizationOrders).values(data);
   return result[0].insertId;
 }
 export async function updateSterilizationOrder(id: number, data: Partial<InsertSterilizationOrder>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  await ensureSterilizationOrderColumns(db);
   await db.update(sterilizationOrders).set(data).where(eq(sterilizationOrders.id, id));
 }
 export async function deleteSterilizationOrder(id: number, deletedBy?: number) {
@@ -4810,12 +4881,14 @@ export async function getProductionWarehouseEntryById(id: number) {
 export async function createProductionWarehouseEntry(data: InsertProductionWarehouseEntry) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  await ensureProductionWarehouseEntryColumns(db);
   const result = await db.insert(productionWarehouseEntries).values(data);
   return result[0].insertId;
 }
 export async function updateProductionWarehouseEntry(id: number, data: Partial<InsertProductionWarehouseEntry>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  await ensureProductionWarehouseEntryColumns(db);
   await db.update(productionWarehouseEntries).set(data).where(eq(productionWarehouseEntries.id, id));
 }
 export async function deleteProductionWarehouseEntry(id: number, deletedBy?: number) {

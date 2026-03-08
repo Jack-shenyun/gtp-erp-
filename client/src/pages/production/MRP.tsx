@@ -6,16 +6,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   LayoutGrid, Search, Play, Eye, Trash2, AlertTriangle, CheckCircle,
-  Package, Clock, RefreshCw, FileText, AlertCircle,
+  Package, Clock, RefreshCw, FileText, AlertCircle, ShoppingCart,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
@@ -92,10 +93,8 @@ type MrpItem = {
 // ────────────────────────────────────────────────────────────
 export default function MRPPage() {
   const { canDelete } = usePermission();
-
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-
   // 计算结果缓存（planId → MrpResult）
   const [resultsMap, setResultsMap] = useState<Record<number, MrpResult>>({});
   // 计算中的 planId 集合
@@ -371,10 +370,46 @@ export default function MRPPage() {
 // ────────────────────────────────────────────────────────────
 function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () => void }) {
   const [filter, setFilter] = useState<"all" | "shortage">("all");
+  const [urgency, setUrgency] = useState<"normal" | "urgent" | "critical">("normal");
+  const [generating, setGenerating] = useState(false);
 
-  const displayItems = filter === "shortage"
-    ? result.items.filter((i) => i.needPurchase)
-    : result.items;
+  const generateMutation = trpc.mrp.generatePurchaseRequest.useMutation({
+    onSuccess: (data) => {
+      setGenerating(false);
+      toast.success(`采购申请单已生成：${data.requestNo}`, {
+        description: "已保存为草稿，请前往「物料申请」页面提交审批",
+        duration: 5000,
+      });
+    },
+    onError: (err) => {
+      setGenerating(false);
+      toast.error(`生成失败：${err.message}`);
+    },
+  });
+
+  const shortageItems = result.items.filter((i) => i.needPurchase);
+  const displayItems = filter === "shortage" ? shortageItems : result.items;
+
+  const handleGeneratePurchaseRequest = () => {
+    if (shortageItems.length === 0) {
+      toast.info("物料充足，无需生成采购申请");
+      return;
+    }
+    setGenerating(true);
+    generateMutation.mutate({
+      productionPlanId: result.planId,
+      planNo: result.planNo,
+      productName: result.productName,
+      urgency,
+      items: shortageItems.map((item) => ({
+        materialCode: item.materialCode,
+        materialName: item.materialName,
+        specification: item.specification !== "-" ? item.specification : undefined,
+        unit: item.unit !== "-" ? item.unit : undefined,
+        netRequirement: item.netRequirement,
+      })),
+    });
+  };
 
   return (
     <DraggableDialog open onOpenChange={(o) => !o && onClose()}>
@@ -518,13 +553,57 @@ function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () =
                   </TableBody>
                 </Table>
               </div>
+
+              {/* 一键生成采购申请 */}
+              {result.shortfallCount > 0 && (
+                <div className="border rounded-lg p-4 bg-orange-50/50 border-orange-200">
+                  <div className="flex items-start gap-3">
+                    <ShoppingCart className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-sm text-orange-800 mb-1">一键生成采购申请单</h4>
+                      <p className="text-xs text-orange-700 mb-3">
+                        将 {result.shortfallCount} 种缺料（净需求 &gt; 0）自动生成一张采购申请单（草稿），
+                        生成后请前往「物料申请」页面提交审批。
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-orange-700 whitespace-nowrap">紧急程度</Label>
+                          <Select value={urgency} onValueChange={(v) => setUrgency(v as any)}>
+                            <SelectTrigger className="h-7 w-24 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="normal">普通</SelectItem>
+                              <SelectItem value="urgent">紧急</SelectItem>
+                              <SelectItem value="critical">特急</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
+                          disabled={generating}
+                          onClick={handleGeneratePurchaseRequest}
+                        >
+                          {generating ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" />
+                          ) : (
+                            <ShoppingCart className="w-3.5 h-3.5 mr-1" />
+                          )}
+                          {generating ? "生成中..." : `生成采购申请（${result.shortfallCount} 种）`}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
 
-        <div className="flex justify-end pt-4 border-t">
+        <DialogFooter className="pt-4 border-t">
           <Button variant="outline" onClick={onClose}>关闭</Button>
-        </div>
+        </DialogFooter>
       </DraggableDialogContent>
     </DraggableDialog>
   );
