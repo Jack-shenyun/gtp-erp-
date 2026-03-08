@@ -5121,3 +5121,190 @@ export async function deleteProductSupplierPrice(id: number) {
   if (!db) throw new Error("Database not available");
   await db.delete(productSupplierPrices).where(eq(productSupplierPrices.id, id));
 }
+
+// ==================== 批记录查询 ====================
+/**
+ * 按生产批号聚合全链路数据（5个板块：生产/质量/仓库/销售/财务）
+ */
+export async function getBatchRecord(batchNo: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // 1. 生产指令（主记录）
+  const productionOrderRows = await db
+    .select()
+    .from(productionOrders)
+    .where(eq(productionOrders.batchNo, batchNo))
+    .limit(1);
+  const productionOrder = productionOrderRows[0] || null;
+
+  // 2. 生产记录（温湿度/清场/首件/材料/通用）
+  const productionRecordRows = await db
+    .select()
+    .from(productionRecords)
+    .where(eq(productionRecords.batchNo, batchNo))
+    .orderBy(asc(productionRecords.recordDate), asc(productionRecords.createdAt));
+
+  // 3. 生产流转单
+  const routingCardRows = await db
+    .select()
+    .from(productionRoutingCards)
+    .where(eq(productionRoutingCards.batchNo, batchNo));
+
+  // 4. 委外灭菌单
+  const sterilizationOrderRows = await db
+    .select()
+    .from(sterilizationOrders)
+    .where(eq(sterilizationOrders.batchNo, batchNo));
+
+  // 5. 质量检验（IPQC + OQC）
+  const qualityInspectionRows = await db
+    .select()
+    .from(qualityInspections)
+    .where(eq(qualityInspections.batchNo, batchNo))
+    .orderBy(asc(qualityInspections.inspectionDate));
+
+  // 6. 生产入库申请
+  const warehouseEntryRows = await db
+    .select()
+    .from(productionWarehouseEntries)
+    .where(eq(productionWarehouseEntries.batchNo, batchNo));
+
+  // 7. 库存流水（入库/出库）
+  const inventoryTxRows = await db
+    .select()
+    .from(inventoryTransactions)
+    .where(eq(inventoryTransactions.batchNo, batchNo))
+    .orderBy(asc(inventoryTransactions.createdAt));
+
+  // 8. 销售订单（通过生产指令的 salesOrderId 关联）
+  let salesOrderData: any = null;
+  let accountsReceivableData: any[] = [];
+  if (productionOrder?.salesOrderId) {
+    const soRows = await db
+      .select()
+      .from(salesOrders)
+      .where(eq(salesOrders.id, productionOrder.salesOrderId))
+      .limit(1);
+    salesOrderData = soRows[0] || null;
+
+    // 9. 应收账款（通过 salesOrderId 关联）
+    accountsReceivableData = await db
+      .select()
+      .from(accountsReceivable)
+      .where(eq(accountsReceivable.salesOrderId, productionOrder.salesOrderId));
+  }
+
+  // 10. 质量不良事件（按批号关联）
+  const incidentRows = await db
+    .select()
+    .from(qualityIncidents)
+    .where(eq(qualityIncidents.batchNo, batchNo));
+
+  return {
+    batchNo,
+    production: {
+      order: productionOrder,
+      records: productionRecordRows,
+      routingCards: routingCardRows,
+      sterilizationOrders: sterilizationOrderRows,
+    },
+    quality: {
+      inspections: qualityInspectionRows,
+      incidents: incidentRows,
+    },
+    warehouse: {
+      entries: warehouseEntryRows,
+      transactions: inventoryTxRows,
+    },
+    sales: {
+      order: salesOrderData,
+    },
+    finance: {
+      accountsReceivable: accountsReceivableData,
+    },
+  };
+}
+
+/**
+ * 获取批记录列表（用于搜索/列表页）
+ */
+export async function getBatchRecordList(params?: {
+  batchNo?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return { list: [], total: 0 };
+
+  const conditions: any[] = [isNotNull(productionOrders.batchNo)];
+  if (params?.batchNo) {
+    conditions.push(like(productionOrders.batchNo, `%${params.batchNo}%`));
+  }
+  if (params?.dateFrom) {
+    conditions.push(sql`DATE(${productionOrders.createdAt}) >= ${params.dateFrom}`);
+  }
+  if (params?.dateTo) {
+    conditions.push(sql`DATE(${productionOrders.createdAt}) <= ${params.dateTo}`);
+  }
+
+  const whereClause = and(...conditions);
+  const limit = params?.limit ?? 20;
+  const offset = params?.offset ?? 0;
+
+  const rows = await db
+    .select({
+      id: productionOrders.id,
+      orderNo: productionOrders.orderNo,
+      batchNo: productionOrders.batchNo,
+      productId: productionOrders.productId,
+      plannedQty: productionOrders.plannedQty,
+      completedQty: productionOrders.completedQty,
+      unit: productionOrders.unit,
+      status: productionOrders.status,
+      productionDate: productionOrders.productionDate,
+      expiryDate: productionOrders.expiryDate,
+      plannedStartDate: productionOrders.plannedStartDate,
+      plannedEndDate: productionOrders.plannedEndDate,
+      salesOrderId: productionOrders.salesOrderId,
+      createdAt: productionOrders.createdAt,
+    })
+    .from(productionOrders)
+    .where(whereClause)
+    .orderBy(desc(productionOrders.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  const countRows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(productionOrders)
+    .where(whereClause);
+
+  return {
+    list: rows,
+    total: Number(countRows[0]?.count ?? 0),
+  };
+}
+
+// ==================== 邮箱协同辅助函数 ====================
+/**
+ * 按部门获取用户邮箱列表（用于邮件通知）
+ * @param departments 部门名称数组，如 ["质量部", "生产部"]
+ */
+export async function getUserEmailsByDepartment(departments: string[]): Promise<string[]> {
+  const db = await getDb();
+  if (!db || departments.length === 0) return [];
+  try {
+    const result = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(inArray(users.department, departments));
+    return result
+      .map(r => r.email)
+      .filter((e): e is string => !!e && e.includes("@"));
+  } catch {
+    return [];
+  }
+}

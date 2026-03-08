@@ -110,6 +110,7 @@ import {
   Archive,
   ArrowRight,
   CheckCircle2,
+  Mail,
 } from "lucide-react";
 import {
   Popover,
@@ -188,6 +189,7 @@ const menuConfig = [
       { icon: ArrowRightLeft, label: "生产流转单", path: "/production/routing-cards" },
       { icon: Flame, label: "委外灭菌单", path: "/production/sterilization" },
       { icon: Warehouse, label: "生产入库申请", path: "/production/warehouse-entry" },
+      { icon: FileText, label: "批记录查询", path: "/production/batch-records" },
       { icon: Layers, label: "BOM物料清单", path: "/production/bom" },
       { icon: GitBranch, label: "MRP物料计划", path: "/production/mrp" },
       { icon: Archive, label: "UDI档案", path: "/production/udi/archive" },
@@ -261,6 +263,7 @@ const menuConfig = [
       { icon: GitBranch, label: "审批流程", path: "/settings/workflows" },
       { icon: Languages, label: "语言设置", path: "/settings/language" },
       { icon: History, label: "操作日志", path: "/settings/logs" },
+      { icon: Mail, label: "邮件通知", path: "/settings/email", adminOnly: true },
       { icon: Trash2, label: "回收箱", path: "/settings/recycle-bin", adminOnly: true },
     ],
   },

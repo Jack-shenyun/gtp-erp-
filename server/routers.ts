@@ -68,7 +68,18 @@ import {
   ensureUsersVisibleAppsColumn,
   ensureUsersAvatarUrlColumn,
   syncOqcResultToWarehouseEntry,
+  getBatchRecord,
+  getBatchRecordList,
+  getUserEmailsByDepartment,
 } from "./db";
+import {
+  notifySterilizationArrived,
+  notifyOqcQualified,
+  notifyOqcUnqualified,
+  notifyWarehouseEntryApproved,
+  notifyWarehouseEntryCompleted,
+  notifyMaterialRequestApproved,
+} from "./emailService";
 import { getDb } from "./db";
 import { orderApprovals, salesOrders as salesOrdersTable, salesOrderItems, inventoryTransactions, users, documents,
   accountsReceivable as accountsReceivableTable,
@@ -1641,6 +1652,39 @@ export const appRouter = router({
             });
           } catch { /* remark解析失败不阻塞 */ }
         }
+        // 邮件通知：OQC 检验结果通知
+        if (input.type === "OQC" && input.result) {
+          try {
+            if (input.result === "qualified") {
+              const productionEmails = await getUserEmailsByDepartment(["生产部"]);
+              if (productionEmails.length > 0) {
+                await notifyOqcQualified({
+                  batchNo: input.batchNo || "",
+                  productName: input.itemName,
+                  inspectionNo: input.inspectionNo,
+                  qualifiedQty: Number(input.qualifiedQty || 0),
+                  rejectQty: Number(input.unqualifiedQty || 0),
+                  sampleQty: Number(input.sampleQty || 0),
+                  productionEmails,
+                });
+              }
+            } else if (input.result === "unqualified") {
+              const notifyEmails = await getUserEmailsByDepartment(["生产部", "质量部"]);
+              if (notifyEmails.length > 0) {
+                await notifyOqcUnqualified({
+                  batchNo: input.batchNo || "",
+                  productName: input.itemName,
+                  inspectionNo: input.inspectionNo,
+                  unqualifiedQty: Number(input.unqualifiedQty || 0),
+                  defectDescription: input.remark,
+                  notifyEmails,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("[Email] OQC检验通知失败：", e);
+          }
+        }
         return inspectionId;
       }),
 
@@ -2424,7 +2468,26 @@ export const appRouter = router({
         reason: z.string().optional(), remark: z.string().optional(),
       }),
     })).mutation(async ({ input }) => {
-      await updateMaterialRequest(input.id, input.data); return { success: true };
+      const oldRequest = await getMaterialRequestById(input.id);
+      await updateMaterialRequest(input.id, input.data);
+      // 邮件通知：采购申请审批通过时，通知采购部下单
+      if (input.data.status === "approved" && oldRequest?.status !== "approved") {
+        try {
+          const purchaseEmails = await getUserEmailsByDepartment(["采购部"]);
+          if (purchaseEmails.length > 0) {
+            const items = await getMaterialRequestItems(input.id);
+            await notifyMaterialRequestApproved({
+              requestNo: oldRequest?.requestNo || "",
+              itemCount: items.length,
+              urgency: input.data.urgency || oldRequest?.urgency,
+              purchaseEmails,
+            });
+          }
+        } catch (e) {
+          console.warn("[Email] 采购申请审批通知失败：", e);
+        }
+      }
+      return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await deleteMaterialRequest(input.id); return { success: true };
@@ -3626,12 +3689,34 @@ export const appRouter = router({
       }),
     })).mutation(async ({ input }) => {
       const { sendDate, expectedReturnDate, actualReturnDate, ...rest } = input.data;
+      // 获取更新前的灭菌单数据（用于邮件通知）
+      const oldOrder = await getSterilizationOrderById(input.id);
       await updateSterilizationOrder(input.id, {
         ...rest,
         sendDate: sendDate ? new Date(sendDate) as any : undefined,
         expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) as any : undefined,
         actualReturnDate: actualReturnDate ? new Date(actualReturnDate) as any : undefined,
       });
+      // 邮件通知：灭菌单状态变为「到货」时，通知质量部安排 OQC 检验
+      if (input.data.status === "arrived" && oldOrder?.status !== "arrived") {
+        try {
+          const qualityEmails = await getUserEmailsByDepartment(["质量部"]);
+          if (qualityEmails.length > 0) {
+            await notifySterilizationArrived({
+              batchNo: oldOrder?.batchNo || "",
+              productName: oldOrder?.productName,
+              sterilizationOrderNo: oldOrder?.sterilizationOrderNo || "",
+              sterilizationBatchNo: input.data.sterilizationBatchNo || oldOrder?.sterilizationBatchNo,
+              quantity: Number(oldOrder?.quantity || 0),
+              unit: oldOrder?.unit,
+              supplierName: input.data.supplierName || oldOrder?.supplierName,
+              qualityEmails,
+            });
+          }
+        } catch (e) {
+          console.warn("[Email] 灭菌到货通知失败：", e);
+        }
+      }
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
@@ -3690,7 +3775,49 @@ export const appRouter = router({
         remark: z.string().optional(),
       }),
     })).mutation(async ({ input }) => {
-      await updateProductionWarehouseEntry(input.id, input.data); return { success: true };
+      // 获取更新前的入库申请数据（用于邮件通知）
+      const oldEntry = await getProductionWarehouseEntryById(input.id);
+      await updateProductionWarehouseEntry(input.id, input.data);
+      // 邮件通知：状态变为「已审批」时，通知仓库部执行入库
+      if (input.data.status === "approved" && oldEntry?.status !== "approved") {
+        try {
+          const warehouseEmails = await getUserEmailsByDepartment(["仓库管理", "仓库部"]);
+          if (warehouseEmails.length > 0) {
+            await notifyWarehouseEntryApproved({
+              batchNo: oldEntry?.batchNo || "",
+              productName: oldEntry?.productName,
+              entryNo: oldEntry?.entryNo || "",
+              quantity: Number(oldEntry?.quantity || 0),
+              unit: oldEntry?.unit,
+              warehouseEmails,
+            });
+          }
+        } catch (e) {
+          console.warn("[Email] 入库审批通知失败：", e);
+        }
+      }
+      // 邮件通知：状态变为「已完成」时，通知销售部和财务部
+      if (input.data.status === "completed" && oldEntry?.status !== "completed") {
+        try {
+          const salesEmails = await getUserEmailsByDepartment(["销售部"]);
+          const financeEmails = await getUserEmailsByDepartment(["财务部"]);
+          if (salesEmails.length > 0 || financeEmails.length > 0) {
+            await notifyWarehouseEntryCompleted({
+              batchNo: oldEntry?.batchNo || "",
+              productName: oldEntry?.productName,
+              entryNo: oldEntry?.entryNo || "",
+              quantity: Number(oldEntry?.quantity || 0),
+              unit: oldEntry?.unit,
+              salesOrderNo: oldEntry?.productionOrderNo,
+              salesEmails,
+              financeEmails,
+            });
+          }
+        } catch (e) {
+          console.warn("[Email] 入库完成通知失败：", e);
+        }
+      }
+      return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await deleteProductionWarehouseEntry(input.id); return { success: true };
@@ -4190,6 +4317,77 @@ export const appRouter = router({
         recalled: result['recalled'] ?? 0,
       };
     }),
+  }),
+
+  // ==================== 系统设置 ====================
+  settings: router({
+    testEmail: protectedProcedure
+      .input(z.object({ to: z.string().email() }))
+      .mutation(async ({ input }) => {
+        const { sendEmail } = await import("./emailService");
+        const success = await sendEmail({
+          to: input.to,
+          subject: "[GTP-ERP] SMTP 配置测试邮件",
+          html: `
+            <div style="font-family:sans-serif;max-width:500px;margin:32px auto;padding:24px;border:1px solid #e5e7eb;border-radius:8px;">
+              <h2 style="color:#2563eb;margin-bottom:8px;">SMTP 配置测试成功</h2>
+              <p style="color:#374151;">GTP-ERP 系统的邮件服务已正常工作！</p>
+              <p style="color:#6b7280;font-size:13px;margin-top:16px;">收到此邮件说明您的 SMTP 配置正确，关键业务节点的自动通知将正常发送。</p>
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+              <p style="color:#9ca3af;font-size:12px;">此邮件由 GTP-ERP 系统自动发送，请勿直接回复。</p>
+            </div>
+          `,
+          text: "GTP-ERP SMTP 配置测试成功！关键业务节点的自动通知将正常发送。",
+        });
+        if (!success) throw new Error("邮件发送失败，请检查 SMTP 配置");
+        return { success: true };
+      }),
+    saveSmtpConfig: adminProcedure
+      .input(z.object({
+        smtpHost: z.string(),
+        smtpPort: z.number().default(465),
+        smtpUser: z.string().email(),
+        smtpPass: z.string(),
+        smtpFrom: z.string().optional(),
+        smtpSecure: z.boolean().default(true),
+      }))
+      .mutation(async ({ input }) => {
+        // 将 SMTP 配置写入公司信息表（作为配置存储）
+        // 实际生产环境应将这些写入环境变量，这里仅做记录
+        const { updateCompanyInfo } = await import("./db");
+        await updateCompanyInfo({
+          smtpConfig: JSON.stringify({
+            host: input.smtpHost,
+            port: input.smtpPort,
+            user: input.smtpUser,
+            secure: input.smtpSecure,
+            from: input.smtpFrom || input.smtpUser,
+          }),
+        } as any);
+        return { success: true, message: "配置已保存，请在服务器环境变量中配置 SMTP_HOST/SMTP_USER/SMTP_PASS 以生效" };
+      }),
+  }),
+
+  // ==================== 批记录（全链路追溯）====================
+  batchRecord: router({
+    list: protectedProcedure
+      .input(z.object({
+        batchNo: z.string().optional(),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getBatchRecordList(input ?? {});
+      }),
+    getByBatchNo: protectedProcedure
+      .input(z.object({ batchNo: z.string() }))
+      .query(async ({ input }) => {
+        const result = await getBatchRecord(input.batchNo);
+        if (!result) throw new Error(`未找到批号 ${input.batchNo} 的批记录`);
+        return result;
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

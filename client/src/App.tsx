@@ -53,6 +53,7 @@ import SterilizationOrderPage from "./pages/production/SterilizationOrder";
 import ProductionWarehouseEntryPage from "./pages/production/ProductionWarehouseEntry";
 import EnvironmentPage from "./pages/production/Environment";
 import ProcessPage from "./pages/production/Process";
+import BatchRecordPage from "./pages/production/BatchRecord";
 
 // 质量部模块
 import LabPage from "./pages/quality/Lab";
@@ -93,6 +94,7 @@ import WorkflowSettingsPage from "./pages/settings/WorkflowSettings";
 import LanguagePage from "./pages/settings/Language";
 import OperationLogsPage from "./pages/settings/OperationLogs";
 import RecycleBinPage from "./pages/settings/RecycleBin";
+import EmailSettingsPage from "./pages/settings/EmailSettings";
 import LoginPage from "./pages/Login";
 
 function Router() {
@@ -149,6 +151,7 @@ function Router() {
       <Route path="/production/equipment" component={EquipmentPage} />
       <Route path="/production/environment" component={EnvironmentPage} />
       <Route path="/production/process" component={ProcessPage} />
+      <Route path="/production/batch-records" component={BatchRecordPage} />
 
       {/* 质量部 */}
       <Route path="/quality/lab" component={LabPage} />
@@ -189,6 +192,7 @@ function Router() {
       <Route path="/settings/language" component={LanguagePage} />
       <Route path="/settings/logs" component={OperationLogsPage} />
       <Route path="/settings/recycle-bin" component={RecycleBinPage} />
+      <Route path="/settings/email" component={EmailSettingsPage} />
 
       {/* 404 */}
       <Route path="/404" component={NotFound} />
