@@ -67,6 +67,7 @@ import {
   getNextOrderNo,
   ensureUsersVisibleAppsColumn,
   ensureUsersAvatarUrlColumn,
+  syncOqcResultToWarehouseEntry,
 } from "./db";
 import { getDb } from "./db";
 import { orderApprovals, salesOrders as salesOrdersTable, salesOrderItems, inventoryTransactions, users, documents,
@@ -1621,11 +1622,26 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const { inspectionDate, ...rest } = input;
-        return await createQualityInspection({
+        const inspectionId = await createQualityInspection({
           ...rest,
           inspectionDate: inspectionDate ? new Date(inspectionDate) : undefined,
           inspectorId: input.inspectorId || ctx.user?.id,
         });
+        // OQC检验结果联动：通过生产批号回写入库申请的检验数据
+        if (input.type === "OQC" && input.batchNo && input.remark) {
+          try {
+            const extra = JSON.parse(input.remark);
+            await syncOqcResultToWarehouseEntry({
+              batchNo: input.batchNo,
+              productionOrderId: input.productionOrderId,
+              sterilizationOrderId: input.sterilizationOrderId,
+              rejectQty: extra.rejectQty,
+              sampleRetainQty: extra.sampleRetainQty,
+              result: input.result,
+            });
+          } catch { /* remark解析失败不阻塞 */ }
+        }
+        return inspectionId;
       }),
 
     update: protectedProcedure
@@ -1657,6 +1673,20 @@ export const appRouter = router({
           ...rest,
           inspectionDate: inspectionDate ? new Date(inspectionDate) : undefined,
         });
+        // OQC检验结果联动：通过生产批号回写入库申请的检验数据
+        if (input.data.batchNo && input.data.remark) {
+          try {
+            const extra = JSON.parse(input.data.remark);
+            await syncOqcResultToWarehouseEntry({
+              batchNo: input.data.batchNo,
+              productionOrderId: input.data.productionOrderId,
+              sterilizationOrderId: input.data.sterilizationOrderId,
+              rejectQty: extra.rejectQty,
+              sampleRetainQty: extra.sampleRetainQty,
+              result: input.data.result,
+            });
+          } catch { /* remark解析失败不阻塞 */ }
+        }
         return { success: true };
       }),
 

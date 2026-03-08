@@ -335,7 +335,7 @@ export default function ProductionWarehouseEntryPage() {
                 <TableRow className="bg-muted/60">
                   <TableHead className="text-center font-bold">入库单号</TableHead>
                   <TableHead className="text-center font-bold">产品名称</TableHead>
-                  <TableHead className="text-center font-bold">批号</TableHead>
+                  <TableHead className="text-center font-bold">生产批号<span className="text-xs text-muted-foreground ml-1">(唯一追溯)</span></TableHead>
                   <TableHead className="text-center font-bold">灭菌批号</TableHead>
                   <TableHead className="text-center font-bold">入库数量</TableHead>
                   <TableHead className="text-center font-bold">目标仓库</TableHead>
@@ -356,7 +356,9 @@ export default function ProductionWarehouseEntryPage() {
                     <TableRow key={entry.id}>
                       <TableCell className="text-center font-medium font-mono">{entry.entryNo}</TableCell>
                       <TableCell className="text-center">{entry.productName || "-"}</TableCell>
-                      <TableCell className="text-center font-mono">{entry.batchNo || "-"}</TableCell>
+                      <TableCell className="text-center">
+                        <span className="font-mono font-semibold text-primary">{entry.batchNo || "-"}</span>
+                      </TableCell>
                       <TableCell className="text-center">
                         {entry.sterilizationBatchNo
                           ? <span className="font-mono text-orange-600 text-xs">{entry.sterilizationBatchNo}</span>

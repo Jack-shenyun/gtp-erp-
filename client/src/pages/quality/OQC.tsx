@@ -133,11 +133,42 @@ export default function OQCPage() {
     { refetchOnWindowFocus: false }
   );
   const createMutation = trpc.qualityInspections.create.useMutation({
-    onSuccess: () => { refetch(); toast.success("检验记录已创建"); setFormDialogOpen(false); },
+    onSuccess: () => {
+      refetch();
+      const result = formData.result;
+      const batchNo = formData.batchNo;
+      if (result === "qualified" && batchNo) {
+        toast.success("OQC 检验合格", {
+          description: `生产批号 ${batchNo} 检验通过，已自动更新对应入库申请的报废数量、留样数量，并推进至「待审批」状态`,
+          duration: 6000,
+        });
+      } else if (result === "unqualified" && batchNo) {
+        toast.warning("OQC 检验不合格", {
+          description: `生产批号 ${batchNo} 检验不合格，已记录报废数量，请联系生产部处理`,
+          duration: 6000,
+        });
+      } else {
+        toast.success("检验记录已创建");
+      }
+      setFormDialogOpen(false);
+    },
     onError: (e) => toast.error("创建失败", { description: e.message }),
   });
   const updateMutation = trpc.qualityInspections.update.useMutation({
-    onSuccess: () => { refetch(); toast.success("检验记录已更新"); setFormDialogOpen(false); },
+    onSuccess: () => {
+      refetch();
+      const result = formData.result;
+      const batchNo = formData.batchNo;
+      if ((result === "qualified" || result === "unqualified") && batchNo) {
+        toast.success("检验记录已更新", {
+          description: `生产批号 ${batchNo} 的入库申请数量已同步更新`,
+          duration: 5000,
+        });
+      } else {
+        toast.success("检验记录已更新");
+      }
+      setFormDialogOpen(false);
+    },
     onError: (e) => toast.error("更新失败", { description: e.message }),
   });
   const deleteMutation = trpc.qualityInspections.delete.useMutation({
@@ -423,7 +454,7 @@ export default function OQCPage() {
               <TableRow>
                 <TableHead>检验单号</TableHead>
                 <TableHead>产品名称</TableHead>
-                <TableHead>批次号</TableHead>
+                <TableHead className="font-bold">生产批号<span className="text-xs text-muted-foreground ml-1">(唯一追溯)</span></TableHead>
                 <TableHead>关联灭菌单</TableHead>
                 <TableHead className="text-right">批量</TableHead>
                 <TableHead className="text-right">报废</TableHead>
@@ -438,7 +469,9 @@ export default function OQCPage() {
                 <TableRow key={record.id} className="cursor-pointer hover:bg-muted/30" onClick={() => handleView(record)}>
                   <TableCell className="font-mono text-sm">{record.inspectionNo}</TableCell>
                   <TableCell className="font-medium">{record.productName}</TableCell>
-                  <TableCell className="font-mono text-sm">{record.batchNo}</TableCell>
+                  <TableCell>
+                    <span className="font-mono text-sm font-semibold text-primary">{record.batchNo}</span>
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {record.sterilizationOrderNo ? (
                       <span className="font-mono text-orange-600">{record.sterilizationOrderNo}</span>

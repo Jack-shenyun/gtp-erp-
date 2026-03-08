@@ -2062,6 +2062,63 @@ export async function deleteQualityInspection(id: number, deletedBy?: number) {
   });
 }
 
+/**
+ * OQC 检验结果联动：通过生产批号（唯一追溯主键）回写入库申请的检验数据
+ * 当 OQC 检验完成时，将报废数量和留样数量写入对应的生产入库申请，并重新计算入库数量
+ */
+export async function syncOqcResultToWarehouseEntry(params: {
+  batchNo: string;
+  productionOrderId?: number;
+  sterilizationOrderId?: number;
+  rejectQty?: number;
+  sampleRetainQty?: number;
+  result?: string;
+}) {
+  const db = await getDb();
+  if (!db || !params.batchNo) return;
+  await ensureProductionWarehouseEntryColumns(db);
+
+  // 优先按生产批号精确匹配入库申请（生产批号是唯一追溯主键）
+  const conditions: any[] = [eq(productionWarehouseEntries.batchNo, params.batchNo)];
+  // 如有生产指令ID，进一步精确匹配
+  if (params.productionOrderId) {
+    conditions.push(eq(productionWarehouseEntries.productionOrderId, params.productionOrderId));
+  }
+
+  const entries = await db
+    .select()
+    .from(productionWarehouseEntries)
+    .where(and(...conditions))
+    .limit(5);
+
+  if (entries.length === 0) return;
+
+  for (const entry of entries) {
+    const rejectQty = params.rejectQty ?? 0;
+    const sampleQty = params.sampleRetainQty ?? 0;
+    const sterilizedQty = parseFloat(String(entry.sterilizedQty ?? entry.quantity ?? 0));
+
+    // 重新计算入库数量 = 灭菌后数量 - 检验报废 - 留样
+    const newQty = Math.max(0, sterilizedQty - rejectQty - sampleQty);
+
+    const updateData: any = {
+      inspectionRejectQty: String(rejectQty),
+      sampleQty: String(sampleQty),
+      quantity: String(newQty),
+    };
+
+    // 如果检验合格，自动推进入库申请状态到 pending（待审批）
+    if (params.result === "qualified" && entry.status === "draft") {
+      updateData.status = "pending";
+    }
+
+    await db
+      .update(productionWarehouseEntries)
+      .set(updateData)
+      .where(eq(productionWarehouseEntries.id, entry.id));
+  }
+}
+
 // ==================== BOM 物料清单 CRUD ====================
 
 export async function getBomByProductId(productId: number) {

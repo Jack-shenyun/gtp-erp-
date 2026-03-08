@@ -89,6 +89,7 @@ export default function SterilizationOrderPage() {
     const matchSearch = !searchTerm ||
       String(o.orderNo ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       String(o.productName ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(o.batchNo ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       String(o.supplierName ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       String(o.sterilizationBatchNo ?? "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchStatus = statusFilter === "all" || o.status === statusFilter;
@@ -280,7 +281,7 @@ export default function SterilizationOrderPage() {
             <div className="flex flex-col md:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="搜索灭菌单号、产品名称、灭菌批号、供应商..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+                <Input placeholder="搜索灭菌单号、产品名称、生产批号、灭菌批号、供应商..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full md:w-[140px]"><SelectValue placeholder="状态筛选" /></SelectTrigger>
@@ -307,7 +308,7 @@ export default function SterilizationOrderPage() {
                 <TableRow className="bg-muted/60">
                   <TableHead className="text-center font-bold">灭菌单号</TableHead>
                   <TableHead className="text-center font-bold">产品名称</TableHead>
-                  <TableHead className="text-center font-bold">生产批号</TableHead>
+                  <TableHead className="text-center font-bold">生产批号<span className="text-xs text-muted-foreground ml-1">(唯一追溯)</span></TableHead>
                   <TableHead className="text-center font-bold">灭菌批号</TableHead>
                   <TableHead className="text-center font-bold">数量</TableHead>
                   <TableHead className="text-center font-bold">灭菌方式</TableHead>
@@ -327,7 +328,9 @@ export default function SterilizationOrderPage() {
                   <TableRow key={order.id}>
                     <TableCell className="text-center font-medium font-mono">{order.orderNo}</TableCell>
                     <TableCell className="text-center">{order.productName || "-"}</TableCell>
-                    <TableCell className="text-center font-mono">{order.batchNo || "-"}</TableCell>
+                    <TableCell className="text-center">
+                      <span className="font-mono font-semibold text-primary">{order.batchNo || "-"}</span>
+                    </TableCell>
                     <TableCell className="text-center">
                       {order.sterilizationBatchNo ? (
                         <span className="font-mono text-orange-600 font-medium">{order.sterilizationBatchNo}</span>
