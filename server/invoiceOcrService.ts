@@ -38,10 +38,10 @@ function getProviders(): ProviderConfig[] {
     },
     {
       name: "智谱",
-      apiKey: process.env.ZHIPU_API_KEY || "",
+      apiKey: process.env.ZHIPU_API_KEY || "b2427e1eaec24e1dbfc6b08c82e6d693.zc0XAEJ1g7iStgYY",
       baseURL: "https://open.bigmodel.cn/api/paas/v4",
       model: "glm-4v-flash",
-      enabled: !!(process.env.ZHIPU_API_KEY),
+      enabled: true,
     },
   ];
 }
