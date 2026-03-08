@@ -1601,3 +1601,58 @@ export const udiLabels = mysqlTable("udi_labels", {
 });
 export type UdiLabel = typeof udiLabels.$inferSelect;
 export type InsertUdiLabel = typeof udiLabels.$inferInsert;
+
+// ==================== 采购到货单 ====================
+/**
+ * 采购到货单主表
+ * 状态流转：pending_inspection → inspecting → passed（质检合格）/ failed（质检不合格）→ warehoused（已入库）
+ */
+export const goodsReceipts = mysqlTable("goods_receipts", {
+  id: int("id").autoincrement().primaryKey(),
+  receiptNo: varchar("receiptNo", { length: 50 }).notNull().unique(),
+  purchaseOrderId: int("purchaseOrderId").notNull(),
+  purchaseOrderNo: varchar("purchaseOrderNo", { length: 50 }).notNull(),
+  supplierId: int("supplierId"),
+  supplierName: varchar("supplierName", { length: 200 }),
+  warehouseId: int("warehouseId").notNull(),
+  receiptDate: date("receiptDate").notNull(),
+  status: mysqlEnum("status", ["pending_inspection", "inspecting", "passed", "failed", "warehoused"]).default("pending_inspection").notNull(),
+  inspectorId: int("inspectorId"),
+  inspectorName: varchar("inspectorName", { length: 64 }),
+  inspectionDate: date("inspectionDate"),
+  inspectionResult: mysqlEnum("inspectionResult", ["pass", "fail", "conditional_pass"]),
+  inspectionRemark: text("inspectionRemark"),
+  inboundDocumentNo: varchar("inboundDocumentNo", { length: 50 }),
+  inboundAt: timestamp("inboundAt"),
+  remark: text("remark"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type GoodsReceipt = typeof goodsReceipts.$inferSelect;
+export type InsertGoodsReceipt = typeof goodsReceipts.$inferInsert;
+
+/**
+ * 采购到货单明细表
+ */
+export const goodsReceiptItems = mysqlTable("goods_receipt_items", {
+  id: int("id").autoincrement().primaryKey(),
+  receiptId: int("receiptId").notNull(),
+  purchaseOrderItemId: int("purchaseOrderItemId"),
+  productId: int("productId"),
+  materialCode: varchar("materialCode", { length: 50 }),
+  materialName: varchar("materialName", { length: 200 }).notNull(),
+  specification: varchar("specification", { length: 200 }),
+  unit: varchar("unit", { length: 20 }),
+  orderedQty: decimal("orderedQty", { precision: 12, scale: 4 }).notNull(),
+  receivedQty: decimal("receivedQty", { precision: 12, scale: 4 }).notNull(),
+  batchNo: varchar("batchNo", { length: 50 }),
+  sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }),
+  inspectionQty: decimal("inspectionQty", { precision: 12, scale: 4 }),
+  qualifiedQty: decimal("qualifiedQty", { precision: 12, scale: 4 }),
+  unqualifiedQty: decimal("unqualifiedQty", { precision: 12, scale: 4 }),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type GoodsReceiptItem = typeof goodsReceiptItems.$inferSelect;
+export type InsertGoodsReceiptItem = typeof goodsReceiptItems.$inferInsert;

@@ -845,7 +845,7 @@ export async function getRecycleBinEntries(params?: {
 
 export async function restoreRecycleBinEntry(id: number, restoredBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await markRecycleEntriesExpired(db);
 
   const [entry] = await db.select().from(recycleBin).where(eq(recycleBin.id, id)).limit(1);
@@ -890,14 +890,14 @@ export async function restoreRecycleBinEntry(id: number, restoredBy?: number) {
 
 export async function removeRecycleBinEntry(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureRecycleBinTable(db);
   await db.delete(recycleBin).where(eq(recycleBin.id, id));
 }
 
 export async function clearExpiredRecycleBinEntries() {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await markRecycleEntriesExpired(db);
   await db.delete(recycleBin).where(eq(recycleBin.status, RECYCLE_STATUS_EXPIRED));
   return { success: true };
@@ -905,7 +905,7 @@ export async function clearExpiredRecycleBinEntries() {
 
 export async function deleteUser(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: users,
     idColumn: users.id,
@@ -918,7 +918,7 @@ export async function deleteUser(id: number, deletedBy?: number) {
 
 export async function deleteDocument(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：电子签名、签名审计日志
   await db.delete(electronicSignatures).where(eq(electronicSignatures.documentId, id));
   await db.delete(signatureAuditLog).where(eq(signatureAuditLog.documentId, id));
@@ -1026,7 +1026,7 @@ export async function isProductCodeExists(code: string, excludeId?: number): Pro
 
 export async function createProduct(data: InsertProduct) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureProductsSterilizedColumn(db);
 
   // 校验编码唯一性
@@ -1039,7 +1039,7 @@ export async function createProduct(data: InsertProduct) {
 
 export async function updateProduct(id: number, data: Partial<InsertProduct>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureProductsSterilizedColumn(db);
 
   await db.update(products).set(data).where(eq(products.id, id));
@@ -1047,7 +1047,7 @@ export async function updateProduct(id: number, data: Partial<InsertProduct>) {
 
 export async function deleteProduct(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：所有引用该产品的子表
   await db.delete(bom).where(eq(bom.productId, id));
   await db.delete(productSupplierPrices).where(eq(productSupplierPrices.productId, id));
@@ -1304,7 +1304,7 @@ export async function getCustomerById(id: number) {
 
 export async function createCustomer(data: InsertCustomer) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   const result = await db.insert(customers).values(data);
   return result[0].insertId;
@@ -1312,14 +1312,14 @@ export async function createCustomer(data: InsertCustomer) {
 
 export async function updateCustomer(id: number, data: Partial<InsertCustomer>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   await db.update(customers).set(data).where(eq(customers.id, id));
 }
 
 export async function deleteCustomer(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：应收账款、经销商资质、报关单、收款记录、销售订单及其子表
   await db.delete(accountsReceivable).where(eq(accountsReceivable.customerId, id));
   await db.delete(dealerQualifications).where(eq(dealerQualifications.customerId, id));
@@ -1391,7 +1391,7 @@ export async function getSupplierById(id: number) {
 
 export async function createSupplier(data: InsertSupplier) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   const result = await db.insert(suppliers).values(data);
   return result[0].insertId;
@@ -1399,14 +1399,14 @@ export async function createSupplier(data: InsertSupplier) {
 
 export async function updateSupplier(id: number, data: Partial<InsertSupplier>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   await db.update(suppliers).set(data).where(eq(suppliers.id, id));
 }
 
 export async function deleteSupplier(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：应付账款、供应商价格、委外灭菌单、付款记录、采购订单及其子表
   await db.delete(accountsPayable).where(eq(accountsPayable.supplierId, id));
   await db.delete(productSupplierPrices).where(eq(productSupplierPrices.supplierId, id));
@@ -1580,7 +1580,7 @@ export async function getSalesOrderItems(orderId: number) {
 
 export async function createSalesOrder(data: InsertSalesOrder, items: InsertSalesOrderItem[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   const result = await db.insert(salesOrders).values(data);
   const orderId = result[0].insertId;
@@ -1595,7 +1595,7 @@ export async function createSalesOrder(data: InsertSalesOrder, items: InsertSale
 
 export async function updateSalesOrder(id: number, data: Partial<InsertSalesOrder>, items?: InsertSalesOrderItem[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   await db.update(salesOrders).set(data).where(eq(salesOrders.id, id));
 
@@ -1610,7 +1610,7 @@ export async function updateSalesOrder(id: number, data: Partial<InsertSalesOrde
 
 export async function deleteSalesOrder(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：应收账款、审批记录、生产计划
   await db.delete(accountsReceivable).where(eq(accountsReceivable.salesOrderId, id));
   await db.delete(orderApprovals).where(and(eq(orderApprovals.orderId, id), eq(orderApprovals.orderType, 'sales')));
@@ -1775,7 +1775,7 @@ export async function getPurchaseOrderItems(orderId: number) {
 
 export async function createPurchaseOrder(data: InsertPurchaseOrder, items: InsertPurchaseOrderItem[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   const result = await db.insert(purchaseOrders).values(data);
   const orderId = result[0].insertId;
@@ -1790,14 +1790,14 @@ export async function createPurchaseOrder(data: InsertPurchaseOrder, items: Inse
 
 export async function updatePurchaseOrder(id: number, data: Partial<InsertPurchaseOrder>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   await db.update(purchaseOrders).set(data).where(eq(purchaseOrders.id, id));
 }
 
 export async function deletePurchaseOrder(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：应付账款、审批记录
   await db.delete(accountsPayable).where(eq(accountsPayable.purchaseOrderId, id));
   await db.delete(orderApprovals).where(and(eq(orderApprovals.orderId, id), eq(orderApprovals.orderType, 'purchase')));
@@ -1880,7 +1880,7 @@ export async function getProductionOrderById(id: number) {
 
 export async function createProductionOrder(data: InsertProductionOrder) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   const result = await db.insert(productionOrders).values(data);
   return result[0].insertId;
@@ -1888,14 +1888,14 @@ export async function createProductionOrder(data: InsertProductionOrder) {
 
 export async function updateProductionOrder(id: number, data: Partial<InsertProductionOrder>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   await db.update(productionOrders).set(data).where(eq(productionOrders.id, id));
 }
 
 export async function deleteProductionOrder(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：生产计划、领料单、批记录、流转卡、灵菁单、入库申请、审批记录
   await db.delete(productionPlans).where(eq(productionPlans.productionOrderId, id));
   await db.delete(materialRequisitionOrders).where(eq(materialRequisitionOrders.productionOrderId, id));
@@ -1996,7 +1996,7 @@ export async function getInventoryById(id: number) {
 
 export async function createInventory(data: InsertInventory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   const result = await db.insert(inventory).values(data);
   return result[0].insertId;
@@ -2004,14 +2004,14 @@ export async function createInventory(data: InsertInventory) {
 
 export async function updateInventory(id: number, data: Partial<InsertInventory>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   await db.update(inventory).set(data).where(eq(inventory.id, id));
 }
 
 export async function deleteInventory(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: inventory,
     idColumn: inventory.id,
@@ -2070,7 +2070,7 @@ export async function getQualityInspectionById(id: number) {
 
 export async function createQualityInspection(data: InsertQualityInspection) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureQualityInspectionColumns(db);
   const result = await db.insert(qualityInspections).values(data);
   return result[0].insertId;
@@ -2078,14 +2078,14 @@ export async function createQualityInspection(data: InsertQualityInspection) {
 
 export async function updateQualityInspection(id: number, data: Partial<InsertQualityInspection>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureQualityInspectionColumns(db);
   await db.update(qualityInspections).set(data).where(eq(qualityInspections.id, id));
 }
 
 export async function deleteQualityInspection(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: qualityInspections,
     idColumn: qualityInspections.id,
@@ -2213,7 +2213,7 @@ export async function getBomList() {
 
 export async function createBomItem(data: InsertBom) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   const result = await db.insert(bom).values(data);
   return result[0].insertId;
@@ -2221,14 +2221,14 @@ export async function createBomItem(data: InsertBom) {
 
 export async function updateBomItem(id: number, data: Partial<InsertBom>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   await db.update(bom).set(data).where(eq(bom.id, id));
 }
 
 export async function deleteBomItem(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: bom,
     idColumn: bom.id,
@@ -2253,20 +2253,20 @@ export async function getWarehouses(params?: { status?: string }) {
 
 export async function createWarehouse(data: InsertWarehouse) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(warehouses).values(data);
   return result[0].insertId;
 }
 
 export async function updateWarehouse(id: number, data: Partial<InsertWarehouse>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(warehouses).set(data).where(eq(warehouses.id, id));
 }
 
 export async function deleteWarehouse(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：库存、库存流水、盘点单、领料单
   await db.delete(inventory).where(eq(inventory.warehouseId, id));
   await db.delete(inventoryTransactions).where(eq(inventoryTransactions.warehouseId, id));
@@ -2321,7 +2321,7 @@ export async function getInventoryTransactions(params?: { search?: string; type?
 
 export async function createInventoryTransaction(data: InsertInventoryTransaction) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureInventoryTransactionColumns(db);
 
   // 1. 写入流水记录
@@ -2379,14 +2379,14 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
 
 export async function updateInventoryTransaction(id: number, data: Partial<InsertInventoryTransaction>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureInventoryTransactionColumns(db);
   await db.update(inventoryTransactions).set(data).where(eq(inventoryTransactions.id, id));
 }
 
 export async function deleteInventoryTransaction(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
 
   // 直接删除流水记录（存入回收站）
   // 库存数量无需重算：查询时实时从剩余流水汇总计算，删除流水后下次查询自动反映正确库存
@@ -2434,7 +2434,7 @@ export async function createOperationLog(data: InsertOperationLog) {
 
 export async function clearOperationLogs() {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.delete(operationLogs);
 }
 
@@ -3326,20 +3326,20 @@ export async function getBankAccountById(id: number) {
 
 export async function createBankAccount(data: InsertBankAccount) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(bankAccounts).values(data);
   return result[0].insertId;
 }
 
 export async function updateBankAccount(id: number, data: Partial<InsertBankAccount>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(bankAccounts).set(data).where(eq(bankAccounts.id, id));
 }
 
 export async function deleteBankAccount(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: bankAccounts,
     idColumn: bankAccounts.id,
@@ -3366,20 +3366,20 @@ export async function getExchangeRates(params?: { fromCurrency?: string; limit?:
 
 export async function createExchangeRate(data: InsertExchangeRate) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(exchangeRates).values(data);
   return result[0].insertId;
 }
 
 export async function updateExchangeRate(id: number, data: Partial<InsertExchangeRate>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(exchangeRates).set(data).where(eq(exchangeRates.id, id));
 }
 
 export async function deleteExchangeRate(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: exchangeRates,
     idColumn: exchangeRates.id,
@@ -3405,20 +3405,20 @@ export async function getPaymentTerms(params?: { type?: string; isActive?: boole
 
 export async function createPaymentTerm(data: InsertPaymentTerm) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(paymentTerms).values(data);
   return result[0].insertId;
 }
 
 export async function updatePaymentTerm(id: number, data: Partial<InsertPaymentTerm>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(paymentTerms).set(data).where(eq(paymentTerms.id, id));
 }
 
 export async function deletePaymentTerm(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: paymentTerms,
     idColumn: paymentTerms.id,
@@ -3458,7 +3458,7 @@ export async function getMaterialRequestItems(requestId: number) {
 
 export async function createMaterialRequest(data: InsertMaterialRequest, items: InsertMaterialRequestItem[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(materialRequests).values(data);
   const requestId = result[0].insertId;
   if (items.length > 0) {
@@ -3469,13 +3469,13 @@ export async function createMaterialRequest(data: InsertMaterialRequest, items: 
 
 export async function updateMaterialRequest(id: number, data: Partial<InsertMaterialRequest>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(materialRequests).set(data).where(eq(materialRequests.id, id));
 }
 
 export async function deleteMaterialRequest(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteBundleWithRecycle(db, {
     rootTable: materialRequests,
     rootIdColumn: materialRequests.id,
@@ -3516,20 +3516,20 @@ export async function getExpenseReimbursementById(id: number) {
 
 export async function createExpenseReimbursement(data: InsertExpenseReimbursement) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(expenseReimbursements).values(data);
   return result[0].insertId;
 }
 
 export async function updateExpenseReimbursement(id: number, data: Partial<InsertExpenseReimbursement>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(expenseReimbursements).set(data).where(eq(expenseReimbursements.id, id));
 }
 
 export async function deleteExpenseReimbursement(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: expenseReimbursements,
     idColumn: expenseReimbursements.id,
@@ -3555,14 +3555,14 @@ export async function getPaymentRecords(params?: { type?: string; relatedType?: 
 
 export async function createPaymentRecord(data: InsertPaymentRecord) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(paymentRecords).values(data);
   return result[0].insertId;
 }
 
 export async function deletePaymentRecord(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: paymentRecords,
     idColumn: paymentRecords.id,
@@ -3624,20 +3624,20 @@ export async function getCustomsDeclarationById(id: number) {
 
 export async function createCustomsDeclaration(data: InsertCustomsDeclaration) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(customsDeclarations).values(data);
   return result[0].insertId;
 }
 
 export async function updateCustomsDeclaration(id: number, data: Partial<InsertCustomsDeclaration>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(customsDeclarations).set(data).where(eq(customsDeclarations.id, id));
 }
 
 export async function deleteCustomsDeclaration(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: customsDeclarations,
     idColumn: customsDeclarations.id,
@@ -3667,20 +3667,20 @@ export async function getDepartmentById(id: number) {
 
 export async function createDepartment(data: InsertDepartment) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(departments).values(data);
   return result[0].insertId;
 }
 
 export async function updateDepartment(id: number, data: Partial<InsertDepartment>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(departments).set(data).where(eq(departments.id, id));
 }
 
 export async function deleteDepartment(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: departments,
     idColumn: departments.id,
@@ -3701,20 +3701,20 @@ export async function getCodeRules() {
 
 export async function createCodeRule(data: InsertCodeRule) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(codeRules).values(data);
   return result[0].insertId;
 }
 
 export async function updateCodeRule(id: number, data: Partial<InsertCodeRule>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(codeRules).set(data).where(eq(codeRules.id, id));
 }
 
 export async function deleteCodeRule(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: codeRules,
     idColumn: codeRules.id,
@@ -3790,7 +3790,7 @@ export async function getCompanyInfo(): Promise<CompanyInfo> {
 
 export async function updateCompanyInfo(data: Partial<InsertCompanyInfo>): Promise<CompanyInfo> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureCompanyInfoTable(db);
   const patch = normalizeCompanyInfoPatch(data);
   const cleanedPatch = Object.fromEntries(
@@ -3863,7 +3863,7 @@ export async function setWorkflowFormCatalogApprovalEnabled(params: {
   path?: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureWorkflowFormCatalogTable(db);
   const current = await getWorkflowFormCatalogItem({
     module: params.module,
@@ -3918,7 +3918,7 @@ export async function getWorkflowTemplateById(id: number) {
 
 export async function createWorkflowTemplate(data: InsertWorkflowTemplate) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureWorkflowTemplatesTable(db);
   const result = await db.insert(workflowTemplates).values(data);
   return result[0].insertId;
@@ -3926,14 +3926,14 @@ export async function createWorkflowTemplate(data: InsertWorkflowTemplate) {
 
 export async function updateWorkflowTemplate(id: number, data: Partial<InsertWorkflowTemplate>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureWorkflowTemplatesTable(db);
   await db.update(workflowTemplates).set(data).where(eq(workflowTemplates.id, id));
 }
 
 export async function deleteWorkflowTemplate(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureWorkflowTemplatesTable(db);
   await deleteSingleWithRecycle(db, {
     table: workflowTemplates,
@@ -3968,20 +3968,20 @@ export async function getPersonnelById(id: number) {
 
 export async function createPersonnel(data: InsertPersonnel) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(personnel).values(data);
   return result[0].insertId;
 }
 
 export async function updatePersonnel(id: number, data: Partial<InsertPersonnel>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(personnel).set(data).where(eq(personnel.id, id));
 }
 
 export async function deletePersonnel(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: personnel,
     idColumn: personnel.id,
@@ -4015,20 +4015,20 @@ export async function getTrainingById(id: number) {
 
 export async function createTraining(data: InsertTraining) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(trainings).values(data);
   return result[0].insertId;
 }
 
 export async function updateTraining(id: number, data: Partial<InsertTraining>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(trainings).set(data).where(eq(trainings.id, id));
 }
 
 export async function deleteTraining(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: trainings,
     idColumn: trainings.id,
@@ -4062,20 +4062,20 @@ export async function getAuditById(id: number) {
 
 export async function createAudit(data: InsertAudit) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(audits).values(data);
   return result[0].insertId;
 }
 
 export async function updateAudit(id: number, data: Partial<InsertAudit>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(audits).set(data).where(eq(audits.id, id));
 }
 
 export async function deleteAudit(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: audits,
     idColumn: audits.id,
@@ -4109,20 +4109,20 @@ export async function getRdProjectById(id: number) {
 
 export async function createRdProject(data: InsertRdProject) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(rdProjects).values(data);
   return result[0].insertId;
 }
 
 export async function updateRdProject(id: number, data: Partial<InsertRdProject>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(rdProjects).set(data).where(eq(rdProjects.id, id));
 }
 
 export async function deleteRdProject(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: rdProjects,
     idColumn: rdProjects.id,
@@ -4156,20 +4156,20 @@ export async function getStocktakeById(id: number) {
 
 export async function createStocktake(data: InsertStocktake) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(stocktakes).values(data);
   return result[0].insertId;
 }
 
 export async function updateStocktake(id: number, data: Partial<InsertStocktake>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(stocktakes).set(data).where(eq(stocktakes.id, id));
 }
 
 export async function deleteStocktake(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: stocktakes,
     idColumn: stocktakes.id,
@@ -4204,20 +4204,20 @@ export async function getQualityIncidentById(id: number) {
 
 export async function createQualityIncident(data: InsertQualityIncident) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(qualityIncidents).values(data);
   return result[0].insertId;
 }
 
 export async function updateQualityIncident(id: number, data: Partial<InsertQualityIncident>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(qualityIncidents).set(data).where(eq(qualityIncidents.id, id));
 }
 
 export async function deleteQualityIncident(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: qualityIncidents,
     idColumn: qualityIncidents.id,
@@ -4251,20 +4251,20 @@ export async function getSampleById(id: number) {
 
 export async function createSample(data: InsertSample) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(samples).values(data);
   return result[0].insertId;
 }
 
 export async function updateSample(id: number, data: Partial<InsertSample>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(samples).set(data).where(eq(samples.id, id));
 }
 
 export async function deleteSample(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：实验室记录
   await db.delete(labRecords).where(eq(labRecords.sampleId, id));
   await deleteSingleWithRecycle(db, {
@@ -4300,20 +4300,20 @@ export async function getLabRecordById(id: number) {
 
 export async function createLabRecord(data: InsertLabRecord) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(labRecords).values(data);
   return result[0].insertId;
 }
 
 export async function updateLabRecord(id: number, data: Partial<InsertLabRecord>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(labRecords).set(data).where(eq(labRecords.id, id));
 }
 
 export async function deleteLabRecord(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: labRecords,
     idColumn: labRecords.id,
@@ -4382,20 +4382,20 @@ export async function getAccountsReceivableById(id: number) {
 
 export async function createAccountsReceivable(data: InsertAccountsReceivable) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(accountsReceivable).values(data);
   return result[0].insertId;
 }
 
 export async function updateAccountsReceivable(id: number, data: Partial<InsertAccountsReceivable>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(accountsReceivable).set(data).where(eq(accountsReceivable.id, id));
 }
 
 export async function deleteAccountsReceivable(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: accountsReceivable,
     idColumn: accountsReceivable.id,
@@ -4450,20 +4450,20 @@ export async function getAccountsPayableById(id: number) {
 
 export async function createAccountsPayable(data: InsertAccountsPayable) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(accountsPayable).values(data);
   return result[0].insertId;
 }
 
 export async function updateAccountsPayable(id: number, data: Partial<InsertAccountsPayable>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(accountsPayable).set(data).where(eq(accountsPayable.id, id));
 }
 
 export async function deleteAccountsPayable(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: accountsPayable,
     idColumn: accountsPayable.id,
@@ -4508,20 +4508,20 @@ export async function getDealerQualificationById(id: number) {
 
 export async function createDealerQualification(data: InsertDealerQualification) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(dealerQualifications).values(data);
   return result[0].insertId;
 }
 
 export async function updateDealerQualification(id: number, data: Partial<InsertDealerQualification>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(dealerQualifications).set(data).where(eq(dealerQualifications.id, id));
 }
 
 export async function deleteDealerQualification(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: dealerQualifications,
     idColumn: dealerQualifications.id,
@@ -4555,20 +4555,20 @@ export async function getEquipmentById(id: number) {
 
 export async function createEquipment(data: InsertEquipment) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(equipment).values(data);
   return result[0].insertId;
 }
 
 export async function updateEquipment(id: number, data: Partial<InsertEquipment>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(equipment).set(data).where(eq(equipment.id, id));
 }
 
 export async function deleteEquipment(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: equipment,
     idColumn: equipment.id,
@@ -4646,13 +4646,13 @@ export async function getProductionPlanById(id: number) {
 }
 export async function createProductionPlan(data: InsertProductionPlan) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(productionPlans).values(data);
   return result[0].insertId;
 }
 export async function updateProductionPlan(id: number, data: Partial<InsertProductionPlan>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(productionPlans).set(data).where(eq(productionPlans.id, id));
 }
 /**
@@ -4736,7 +4736,7 @@ export async function autoGenerateProductionPlans(salesOrderId: number, createdB
 
 export async function deleteProductionPlan(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: productionPlans,
     idColumn: productionPlans.id,
@@ -4767,18 +4767,18 @@ export async function getMaterialRequisitionOrderById(id: number) {
 }
 export async function createMaterialRequisitionOrder(data: InsertMaterialRequisitionOrder) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(materialRequisitionOrders).values(data);
   return result[0].insertId;
 }
 export async function updateMaterialRequisitionOrder(id: number, data: Partial<InsertMaterialRequisitionOrder>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(materialRequisitionOrders).set(data).where(eq(materialRequisitionOrders.id, id));
 }
 export async function deleteMaterialRequisitionOrder(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: materialRequisitionOrders,
     idColumn: materialRequisitionOrders.id,
@@ -4810,18 +4810,18 @@ export async function getProductionRecordById(id: number) {
 }
 export async function createProductionRecord(data: InsertProductionRecord) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(productionRecords).values(data);
   return result[0].insertId;
 }
 export async function updateProductionRecord(id: number, data: Partial<InsertProductionRecord>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(productionRecords).set(data).where(eq(productionRecords.id, id));
 }
 export async function deleteProductionRecord(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: productionRecords,
     idColumn: productionRecords.id,
@@ -4852,18 +4852,18 @@ export async function getProductionRoutingCardById(id: number) {
 }
 export async function createProductionRoutingCard(data: InsertProductionRoutingCard) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(productionRoutingCards).values(data);
   return result[0].insertId;
 }
 export async function updateProductionRoutingCard(id: number, data: Partial<InsertProductionRoutingCard>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(productionRoutingCards).set(data).where(eq(productionRoutingCards.id, id));
 }
 export async function deleteProductionRoutingCard(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：委外灭菌单及其关联的入库申请
   const relatedSterilizations = await db.select({ id: sterilizationOrders.id }).from(sterilizationOrders).where(eq(sterilizationOrders.routingCardId, id));
   for (const s of relatedSterilizations) {
@@ -4900,20 +4900,20 @@ export async function getSterilizationOrderById(id: number) {
 }
 export async function createSterilizationOrder(data: InsertSterilizationOrder) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureSterilizationOrderColumns(db);
   const result = await db.insert(sterilizationOrders).values(data);
   return result[0].insertId;
 }
 export async function updateSterilizationOrder(id: number, data: Partial<InsertSterilizationOrder>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureSterilizationOrderColumns(db);
   await db.update(sterilizationOrders).set(data).where(eq(sterilizationOrders.id, id));
 }
 export async function deleteSterilizationOrder(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   // 级联删除：生产入库申请
   await db.delete(productionWarehouseEntries).where(eq(productionWarehouseEntries.sterilizationOrderId, id));
   await deleteSingleWithRecycle(db, {
@@ -4946,20 +4946,20 @@ export async function getProductionWarehouseEntryById(id: number) {
 }
 export async function createProductionWarehouseEntry(data: InsertProductionWarehouseEntry) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureProductionWarehouseEntryColumns(db);
   const result = await db.insert(productionWarehouseEntries).values(data);
   return result[0].insertId;
 }
 export async function updateProductionWarehouseEntry(id: number, data: Partial<InsertProductionWarehouseEntry>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureProductionWarehouseEntryColumns(db);
   await db.update(productionWarehouseEntries).set(data).where(eq(productionWarehouseEntries.id, id));
 }
 export async function deleteProductionWarehouseEntry(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: productionWarehouseEntries,
     idColumn: productionWarehouseEntries.id,
@@ -4991,18 +4991,18 @@ export async function getOvertimeRequestById(id: number) {
 }
 export async function createOvertimeRequest(data: InsertOvertimeRequest) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(overtimeRequests).values(data);
   return result[0].insertId;
 }
 export async function updateOvertimeRequest(id: number, data: Partial<InsertOvertimeRequest>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(overtimeRequests).set(data).where(eq(overtimeRequests.id, id));
 }
 export async function deleteOvertimeRequest(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: overtimeRequests,
     idColumn: overtimeRequests.id,
@@ -5033,18 +5033,18 @@ export async function getLeaveRequestById(id: number) {
 }
 export async function createLeaveRequest(data: InsertLeaveRequest) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(leaveRequests).values(data);
   return result[0].insertId;
 }
 export async function updateLeaveRequest(id: number, data: Partial<InsertLeaveRequest>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(leaveRequests).set(data).where(eq(leaveRequests.id, id));
 }
 export async function deleteLeaveRequest(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: leaveRequests,
     idColumn: leaveRequests.id,
@@ -5075,18 +5075,18 @@ export async function getOutingRequestById(id: number) {
 }
 export async function createOutingRequest(data: InsertOutingRequest) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(outingRequests).values(data);
   return result[0].insertId;
 }
 export async function updateOutingRequest(id: number, data: Partial<InsertOutingRequest>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(outingRequests).set(data).where(eq(outingRequests.id, id));
 }
 export async function deleteOutingRequest(id: number, deletedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await deleteSingleWithRecycle(db, {
     table: outingRequests,
     idColumn: outingRequests.id,
@@ -5116,18 +5116,18 @@ export async function getProductSupplierPriceById(id: number) {
 }
 export async function createProductSupplierPrice(data: InsertProductSupplierPrice) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   const result = await db.insert(productSupplierPrices).values(data);
   return result[0].insertId;
 }
 export async function updateProductSupplierPrice(id: number, data: Partial<InsertProductSupplierPrice>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.update(productSupplierPrices).set(data).where(eq(productSupplierPrices.id, id));
 }
 export async function deleteProductSupplierPrice(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await db.delete(productSupplierPrices).where(eq(productSupplierPrices.id, id));
 }
 
@@ -5486,7 +5486,7 @@ export async function createGoodsReceipt(data: {
   }>;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureGoodsReceiptsTable(db);
   const { items, ...receiptData } = data;
   const [result] = await db.insert(goodsReceipts).values({
@@ -5515,7 +5515,7 @@ export async function updateGoodsReceipt(id: number, data: Partial<{
   }>;
 }>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureGoodsReceiptsTable(db);
   const { items, ...receiptData } = data;
   if (Object.keys(receiptData).length > 0) {
@@ -5533,7 +5533,7 @@ export async function updateGoodsReceipt(id: number, data: Partial<{
 
 export async function deleteGoodsReceipt(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new Error("数据库连接不可用");
   await ensureGoodsReceiptsTable(db);
   await db.delete(goodsReceiptItems).where(eq(goodsReceiptItems.receiptId, id));
   await db.delete(goodsReceipts).where(eq(goodsReceipts.id, id));

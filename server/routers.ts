@@ -72,6 +72,8 @@ import {
   getBatchRecord,
   getBatchRecordList,
   getUserEmailsByDepartment,
+  getGoodsReceipts, getGoodsReceiptById, createGoodsReceipt, updateGoodsReceipt, deleteGoodsReceipt,
+  ensureGoodsReceiptsTable,
 } from "./db";
 import {
   notifySterilizationArrived,
@@ -370,7 +372,7 @@ export const appRouter = router({
   users: router({
     list: protectedProcedure.query(async () => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
       await ensureUsersVisibleAppsColumn(db);
       await ensureUsersAvatarUrlColumn(db);
       const result = await db.select({
@@ -399,7 +401,7 @@ export const appRouter = router({
       visibleApps: z.array(z.string()).optional(),
     })).mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
       await ensureUsersVisibleAppsColumn(db);
       const openId = `user-${input.username}`;
       await db.insert(users).values({
@@ -426,7 +428,7 @@ export const appRouter = router({
       visibleApps: z.array(z.string()).optional(),
     })).mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
       await ensureUsersVisibleAppsColumn(db);
       const { id, username, ...data } = input;
       await db.update(users).set({
@@ -452,7 +454,7 @@ export const appRouter = router({
         throw new Error("仅管理员可修改密码");
       }
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
       const passwordHash = hashPassword(input.newPassword);
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS user_passwords (
@@ -478,7 +480,7 @@ export const appRouter = router({
       base64: z.string(),
     })).mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
       await ensureUsersAvatarUrlColumn(db);
       const imageExtAllowList = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
       const extFromName = `.${String(input.name.split(".").pop() || "").toLowerCase()}`;
@@ -721,7 +723,7 @@ export const appRouter = router({
       .input(z.object({ customerId: z.number() }))
       .query(async ({ input }) => {
         const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
         if (!db) return [];
         const orders = await db
           .select({
@@ -744,7 +746,7 @@ export const appRouter = router({
       .input(z.object({ customerId: z.number() }))
       .query(async ({ input }) => {
         const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
         if (!db) {
           return {
             orderCount: 0,
@@ -1112,8 +1114,8 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-      if (!db) throw new Error("Database not available");
-        if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
+        if (!db) throw new Error("数据库连接不可用");
         await db.update(salesOrdersTable).set({ status: "pending_review" }).where(eq(salesOrdersTable.id, input.id));
         await db.insert(orderApprovals).values({
           orderId: input.id,
@@ -1135,7 +1137,7 @@ export const appRouter = router({
       .input(z.object({ id: z.number(), comment: z.string().optional() }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         const approvalState = await getSalesOrderApprovalState(input.id, ctx.user?.id, ctx.user?.role);
         if (!approvalState || approvalState.stage === "none") {
           throw new Error("当前订单无需审批");
@@ -1185,7 +1187,7 @@ export const appRouter = router({
       .input(z.object({ id: z.number(), comment: z.string() }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         const approvalState = await getSalesOrderApprovalState(input.id, ctx.user?.id, ctx.user?.role);
         if (!approvalState || approvalState.stage === "none") {
           throw new Error("当前订单无需审批");
@@ -1211,8 +1213,8 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const db = await getDb();
-      if (!db) throw new Error("Database not available");
-        if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
+        if (!db) throw new Error("数据库连接不可用");
         return await db.select().from(orderApprovals)
           .where(eq(orderApprovals.orderId, input.id))
           .orderBy(desc(orderApprovals.createdAt));
@@ -1232,7 +1234,7 @@ export const appRouter = router({
       .input(z.object({ orderId: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
 
         // 查询订单明细
         const orderItems = await db
@@ -1389,7 +1391,7 @@ export const appRouter = router({
       .input(z.object({ orderId: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         const { purchaseOrders: poTable, purchaseOrderItems: poItemsTable } = await import("../drizzle/schema");
         const orderItems = await db.select().from(poItemsTable).where(eq(poItemsTable.orderId, input.orderId));
         if (orderItems.length === 0) return { status: "ordered", message: "订单无明细" };
@@ -2260,7 +2262,7 @@ export const appRouter = router({
     list: protectedProcedure
       .query(async () => {
         const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
         return await db.select().from(documents).orderBy(desc(documents.createdAt));
       }),
     create: protectedProcedure
@@ -2276,7 +2278,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
         return await db.insert(documents).values({
           ...input,
           effectiveDate: input.effectiveDate ? new Date(input.effectiveDate) : null,
@@ -2296,7 +2298,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
 
         const departmentName = normalizeDepartmentForUpload(input.department, "销售部");
         const [department, folderName] = buildUploadFolderName(departmentName, "收款单").map(safeFileSegment);
@@ -2367,7 +2369,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
         const { id, data } = input;
         return await db.update(documents)
           .set({
@@ -4076,7 +4078,7 @@ export const appRouter = router({
       .input(z.object({ productionPlanId: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
 
         const plan = await getProductionPlanById(input.productionPlanId);
         if (!plan) throw new Error("生产计划不存在");
@@ -4206,7 +4208,7 @@ export const appRouter = router({
         const requestNo = await getNextOrderNo("MR", mrTable, mrTable.requestNo);
         const today = new Date().toISOString().split("T")[0];
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         const [inserted] = await db.insert(mrTable).values({
           requestNo,
           department: "生产部",
@@ -4245,7 +4247,7 @@ export const appRouter = router({
       }).optional())
       .query(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         const conditions: any[] = [];
         if (input?.search) {
           conditions.push(or(
@@ -4277,7 +4279,7 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         const [row] = await db.select().from(udiLabels).where(eq(udiLabels.id, input.id));
         if (!row) throw new Error("UDI记录不存在");
         return {
@@ -4312,7 +4314,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         const now = new Date();
         const prefix = `UDI${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
         const [lastRow] = await db.select({ labelNo: udiLabels.labelNo })
@@ -4368,7 +4370,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         const { id, productionDate, expiryDate, ...rest } = input;
         await db.update(udiLabels).set({
           ...rest,
@@ -4382,7 +4384,7 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         await db.delete(udiLabels).where(eq(udiLabels.id, input.id));
         return { success: true };
       }),
@@ -4391,7 +4393,7 @@ export const appRouter = router({
       .input(z.object({ id: z.number(), printedQty: z.number() }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         await db.update(udiLabels).set({
           status: "printed",
           printedQty: input.printedQty,
@@ -4405,7 +4407,7 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw new Error("数据库连接不可用");
         await db.update(udiLabels).set({
           nmpaSubmitted: true,
           nmpaSubmitDate: new Date(),
@@ -4415,7 +4417,7 @@ export const appRouter = router({
 
     stats: protectedProcedure.query(async () => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw new Error("数据库连接不可用");
       const rows = await db.select({
         status: udiLabels.status,
         count: sql<number>`count(*)`,
@@ -4503,5 +4505,83 @@ export const appRouter = router({
         return result;
       }),
   }),
+  goodsReceipts: router({
+    list: protectedProcedure
+      .input(z.object({ status: z.string().optional(), search: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getGoodsReceipts(input ?? {});
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getGoodsReceiptById(input.id);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        receiptNo: z.string(),
+        purchaseOrderId: z.number(),
+        purchaseOrderNo: z.string(),
+        supplierId: z.number().optional(),
+        supplierName: z.string().optional(),
+        warehouseId: z.number(),
+        receiptDate: z.string(),
+        remark: z.string().optional(),
+        items: z.array(z.object({
+          purchaseOrderItemId: z.number().optional(),
+          productId: z.number().optional(),
+          materialCode: z.string().optional(),
+          materialName: z.string(),
+          specification: z.string().optional(),
+          unit: z.string().optional(),
+          orderedQty: z.string(),
+          receivedQty: z.string(),
+          batchNo: z.string().optional(),
+          sterilizationBatchNo: z.string().optional(),
+          remark: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createGoodsReceipt({ ...input, createdBy: ctx.user?.id });
+        return { id };
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.string().optional(),
+        inspectorId: z.number().optional(),
+        inspectorName: z.string().optional(),
+        inspectionDate: z.string().optional(),
+        inspectionResult: z.string().optional(),
+        inspectionRemark: z.string().optional(),
+        inboundDocumentNo: z.string().optional(),
+        remark: z.string().optional(),
+        items: z.array(z.object({
+          purchaseOrderItemId: z.number().optional(),
+          productId: z.number().optional(),
+          materialCode: z.string().optional(),
+          materialName: z.string(),
+          specification: z.string().optional(),
+          unit: z.string().optional(),
+          orderedQty: z.string(),
+          receivedQty: z.string(),
+          batchNo: z.string().optional(),
+          sterilizationBatchNo: z.string().optional(),
+          inspectionQty: z.string().optional(),
+          qualifiedQty: z.string().optional(),
+          unqualifiedQty: z.string().optional(),
+          remark: z.string().optional(),
+        })).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateGoodsReceipt(id, data as any);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteGoodsReceipt(input.id);
+        return { success: true };
+      }),
+  }),
 });
-export type AppRouter = typeof appRouter;
