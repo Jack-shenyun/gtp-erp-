@@ -220,20 +220,6 @@ export default function IQCPage() {
   // 当前 Tab
   const [activeTab, setActiveTab] = useState("items");
 
-  // 已检验的到货单明细ID集合（用于禁用已检验行）
-  const inspectedItemIds = useMemo(() => {
-    const ids = new Set<number>();
-    (iqcList as any[]).forEach((r: any) => {
-      if (r.goodsReceiptItemId && r.result !== 'pending') {
-        // 编辑时排除当前记录自身
-        if (!editId || r.id !== editId) {
-          ids.add(r.goodsReceiptItemId);
-        }
-      }
-    });
-    return ids;
-  }, [iqcList, editId]);
-
   const [lastAppliedReqId, setLastAppliedReqId] = useState<number | null>(null);
 
   // ==================== 查询 ====================
@@ -242,6 +228,19 @@ export default function IQCPage() {
     search: search || undefined,
     limit: 200,
   });
+
+  // 已检验的到货单明细ID集合（用于禁用已检验行）
+  const inspectedItemIds = useMemo(() => {
+    const ids = new Set<number>();
+    (iqcList as any[]).forEach((r: any) => {
+      if (r.goodsReceiptItemId && r.result !== 'pending') {
+        if (!editId || r.id !== editId) {
+          ids.add(r.goodsReceiptItemId);
+        }
+      }
+    });
+    return ids;
+  }, [iqcList, editId]);
 
   const { data: detailData } = trpc.iqcInspections.getById.useQuery(
     { id: detailId! }, { enabled: !!detailId }
