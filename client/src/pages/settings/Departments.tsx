@@ -47,6 +47,7 @@ import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 import { useOperationLog } from "@/hooks/useOperationLog";
 import { parseDepartmentList, stringifyDepartmentList } from "@/constants/departments";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 
 interface DepartmentRecord {
   id: number;

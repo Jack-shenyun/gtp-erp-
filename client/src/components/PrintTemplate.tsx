@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Printer, X } from 'lucide-react';

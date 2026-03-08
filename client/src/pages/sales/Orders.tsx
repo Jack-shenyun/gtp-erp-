@@ -54,6 +54,7 @@ import {
   normalizePaymentCondition,
 } from "@shared/paymentTerms";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 
 // ==================== 类型定义 ====================
 

@@ -124,6 +124,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 
 // 菜单配置 - 九大部门模块
 const menuConfig = [

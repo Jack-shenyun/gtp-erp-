@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 
 const statusMap: Record<string, any> = {
   pending: { label: "待入库", variant: "outline" as const },

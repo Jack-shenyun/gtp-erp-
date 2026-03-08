@@ -24,6 +24,7 @@ import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { ArchiveRestore, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 
 type RecycleStatus = "all" | "active" | "restored" | "expired";
 

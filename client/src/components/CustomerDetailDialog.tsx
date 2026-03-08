@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { TrendingUp, Calendar, DollarSign, ShoppingCart } from "lucide-react";
 import { useLocation } from "wouter";
 import { normalizePaymentCondition } from "@shared/paymentTerms";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 
 interface Customer {
   id: number;
