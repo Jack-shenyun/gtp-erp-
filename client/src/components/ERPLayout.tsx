@@ -112,6 +112,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Mail,
+  Inbox,
   ScrollText,
   PackageCheck,
   FileCheck,
@@ -277,6 +278,14 @@ const menuConfig = [
     ],
   },
   {
+    id: "mail",
+    icon: Inbox,
+    label: "邮件协同",
+    children: [
+      { icon: Mail, label: "收件箱", path: "/mail" },
+    ],
+  },
+  {
     id: "settings",
     icon: Settings,
     label: "系统设置",
@@ -296,15 +305,15 @@ const menuConfig = [
 ];
 
 const DEPARTMENT_MENU_ACCESS: Record<string, string[]> = {
-  "管理部": ["admin", "settings", "batch-management"],
-  "招商部": ["investment"],
-  "销售部": ["sales", "batch-management"],
-  "研发部": ["rd"],
-  "生产部": ["production", "batch-management"],
-  "质量部": ["quality", "batch-management"],
-  "采购部": ["purchase"],
-  "仓库管理": ["warehouse", "batch-management"],
-  "财务部": ["finance", "batch-management"],
+  "管理部": ["admin", "settings", "batch-management", "mail"],
+  "招商部": ["investment", "mail"],
+  "销售部": ["sales", "batch-management", "mail"],
+  "研发部": ["rd", "mail"],
+  "生产部": ["production", "batch-management", "mail"],
+  "质量部": ["quality", "batch-management", "mail"],
+  "采购部": ["purchase", "mail"],
+  "仓库管理": ["warehouse", "batch-management", "mail"],
+  "财务部": ["finance", "batch-management", "mail"],
 };
 
 function parseDepartments(raw: unknown): string[] {

@@ -24,7 +24,7 @@ function getProviders(): ProviderConfig[] {
   return [
     {
       name: "豆包",
-      apiKey: process.env.DOUBAO_API_KEY || "1843f480-20a6-48d2-a9a5-8a4a188a3f32",
+      apiKey: process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || "1843f480-20a6-48d2-a9a5-8a4a188a3f32",
       baseURL: "https://ark.cn-beijing.volces.com/api/v3",
       model: "doubao-1.5-vision-pro-32k-250115",
       enabled: true,
@@ -136,7 +136,7 @@ async function recognizeWithFallback(imageBase64: string): Promise<{
   const providers = getProviders().filter(p => p.enabled);
 
   if (providers.length === 0) {
-    throw new Error("未配置任何 AI 识别服务，请设置 DOUBAO_API_KEY 等环境变量");
+    throw new Error("未配置任何 AI 识别服务，请设置 ARK_API_KEY 或 ZHIPU_API_KEY 等环境变量");
   }
 
   const errors: string[] = [];

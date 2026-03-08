@@ -5854,3 +5854,64 @@ export async function deleteIqcInspection(id: number) {
   await db.delete(iqcInspectionItems).where(eq(iqcInspectionItems.iqcId, id));
   await db.delete(iqcInspections).where(eq(iqcInspections.id, id));
 }
+
+// ==================== 邮件协同表 ====================
+
+let emailTablesReady = false;
+
+export async function ensureEmailTables(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || emailTablesReady) return;
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS emails (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      messageId VARCHAR(512),
+      folder ENUM('inbox','sent','draft','trash') NOT NULL DEFAULT 'inbox',
+      subject VARCHAR(500),
+      fromAddress VARCHAR(320),
+      fromName VARCHAR(200),
+      toAddress TEXT,
+      ccAddress TEXT,
+      bodyHtml TEXT,
+      bodyText TEXT,
+      isRead TINYINT(1) NOT NULL DEFAULT 0,
+      isStarred TINYINT(1) NOT NULL DEFAULT 0,
+      hasAttachment TINYINT(1) NOT NULL DEFAULT 0,
+      sentAt TIMESTAMP NULL,
+      receivedAt TIMESTAMP NULL,
+      uid INT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_messageId (messageId(255))
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS email_attachments (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      emailId INT NOT NULL,
+      filename VARCHAR(500) NOT NULL,
+      mimeType VARCHAR(200),
+      size INT,
+      storagePath VARCHAR(1000),
+      downloadedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS email_contacts (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      emailAddress VARCHAR(320) NOT NULL UNIQUE,
+      displayName VARCHAR(200),
+      emailCount INT NOT NULL DEFAULT 0,
+      lastEmailAt TIMESTAMP NULL,
+      remark TEXT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+
+  emailTablesReady = true;
+}

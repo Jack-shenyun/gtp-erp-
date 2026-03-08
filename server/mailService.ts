@@ -23,7 +23,7 @@ import nodemailer from "nodemailer";
 import fs from "fs";
 import path from "path";
 import { OpenAI } from "openai";
-import { getDb } from "./db";
+import { getDb, ensureEmailTables } from "./db";
 import { emails, emailAttachments, emailContacts } from "../drizzle/schema";
 import { eq, desc, like, and, or, inArray } from "drizzle-orm";
 
@@ -63,6 +63,7 @@ export async function syncInbox(limit = 50): Promise<{ synced: number; errors: s
   const cfg = getMailConfig();
   const db = await getDb();
   if (!db) return { synced: 0, errors: ["数据库连接不可用"] };
+  await ensureEmailTables(db);
 
   return new Promise((resolve) => {
     const imap = new Imap({
@@ -259,6 +260,7 @@ export async function getEmails(params: {
 }) {
   const db = await getDb();
   if (!db) return { list: [], total: 0 };
+  await ensureEmailTables(db);
 
   const { folder = "inbox", search, contactAddress, limit = 50, offset = 0 } = params;
 
@@ -431,6 +433,33 @@ export async function sendMail(params: {
   }
 }
 
+// ==================== AI 客户端工厂 ====================
+
+/**
+ * 优先使用豆包（ARK），其次智谱（ZHIPU）
+ * 两者均兼容 OpenAI SDK，只需切换 baseURL 和 apiKey
+ */
+function getAiClient(): { client: OpenAI; model: string } {
+  const arkKey = process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || "1843f480-20a6-48d2-a9a5-8a4a188a3f32";
+  if (arkKey) {
+    return {
+      client: new OpenAI({
+        apiKey: arkKey,
+        baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+      }),
+      model: "doubao-1.5-pro-32k-250115",
+    };
+  }
+  const zhipuKey = process.env.ZHIPU_API_KEY || "b2427e1eaec24e1dbfc6b08c82e6d693.zc0XAEJ1g7iStgYY";
+  return {
+    client: new OpenAI({
+      apiKey: zhipuKey,
+      baseURL: "https://open.bigmodel.cn/api/paas/v4",
+    }),
+    model: "glm-4-flash",
+  };
+}
+
 // ==================== AI 翻译 ====================
 
 export async function translateEmail(emailId: number, targetLang = "中文"): Promise<string> {
@@ -443,9 +472,9 @@ export async function translateEmail(emailId: number, targetLang = "中文"): Pr
   const content = email.bodyText || email.bodyHtml?.replace(/<[^>]+>/g, "") || "";
   if (!content.trim()) return "(邮件正文为空)";
 
-  const client = new OpenAI();
+  const { client, model } = getAiClient();
   const completion = await client.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model,
     messages: [
       {
         role: "system",
@@ -472,9 +501,9 @@ export async function generateReply(emailId: number): Promise<string> {
   const subject = email.subject || "";
   const fromName = email.fromName || email.fromAddress || "";
 
-  const client = new OpenAI();
+  const { client, model } = getAiClient();
   const completion = await client.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model,
     messages: [
       {
         role: "system",
