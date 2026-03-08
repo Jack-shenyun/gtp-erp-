@@ -1,4 +1,4 @@
-import { formatDateTime } from "@/lib/formatters";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import ERPLayout from "@/components/ERPLayout";
@@ -21,7 +21,6 @@ import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableD
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { QrCode, Plus, Search, Eye, Trash2, MoreHorizontal, Pencil, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (

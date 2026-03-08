@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/popover";
 import { getLoginUrl } from "@/const";
 import shenyunLogo from "@/assets/2ac420a999cddd5f145a62155f78b13e.png";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 const DEPARTMENT_MENU_ACCESS: Record<string, string[]> = {
   管理部: ["admin", "settings", "common"],

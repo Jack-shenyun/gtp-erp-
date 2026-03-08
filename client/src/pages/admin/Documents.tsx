@@ -1,4 +1,4 @@
-import { formatDate } from "@/lib/formatters";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useState, useEffect } from "react";
 import ModulePage, { Column, StatusBadge } from "@/components/ModulePage";
 import FormDialog, { FormField, DetailDialog, DetailField } from "@/components/FormDialog";
@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 interface Document {
   id: number;

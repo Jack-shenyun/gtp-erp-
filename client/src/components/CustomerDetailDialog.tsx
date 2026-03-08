@@ -1,4 +1,4 @@
-import { formatDate } from "@/lib/formatters";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog } from "./DraggableDialog";
@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { TrendingUp, Calendar, DollarSign, ShoppingCart } from "lucide-react";
 import { useLocation } from "wouter";
 import { normalizePaymentCondition } from "@shared/paymentTerms";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 interface Customer {
   id: number;
@@ -100,8 +99,6 @@ export function CustomerDetailDialog({ open, onOpenChange, customer, onEdit }: C
 
   if (!customer) return null;
 
-  const formatDate = (date: Date | string) =>
-    formatDate(date);
 
   const getCurrencySymbol = (currency?: string) => {
     switch (String(currency || "CNY").toUpperCase()) {

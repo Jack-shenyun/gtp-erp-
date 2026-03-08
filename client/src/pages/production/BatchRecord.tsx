@@ -1,4 +1,4 @@
-import { formatDate } from "@/lib/formatters";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import ERPLayout from "@/components/ERPLayout";
@@ -21,7 +21,6 @@ import {
   CheckCircle2, XCircle, AlertCircle, Clock, Thermometer, Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 // ========== 状态标签映射 ==========
 const productionStatusMap: Record<string, { label: string; color: string }> = {
