@@ -38,6 +38,7 @@ import {
   Edit,
   Trash2,
   Eye,
+  EyeOff,
   ArrowUpDown,
   AlertTriangle,
   RefreshCw,
@@ -86,6 +87,7 @@ export default function InventoryPage() {
   const [productCategoryFilter, setProductCategoryFilter] = useState<string>("all"); // 产品分类筛选
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");           // 产品属性筛选
   const [productNameFilter, setProductNameFilter] = useState<string>("");             // 产品名称筛选
+  const [hideZeroStock, setHideZeroStock] = useState<boolean>(true);                 // 默认隐藏零库存/负库存
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
@@ -144,6 +146,8 @@ export default function InventoryPage() {
   // 前端多维度筛选
   const filteredInventory = useMemo(() => {
     return inventoryWithProduct.filter((item: any) => {
+      // 零库存/负库存过滤（默认隐藏）
+      if (hideZeroStock && (parseFloat(String(item.quantity)) || 0) <= 0) return false;
       // 产品名称筛选
       if (productNameFilter && !item.itemName?.toLowerCase().includes(productNameFilter.toLowerCase())) return false;
       // 产品分类筛选
@@ -152,7 +156,7 @@ export default function InventoryPage() {
       if (sourceTypeFilter !== "all" && item.sourceType !== sourceTypeFilter) return false;
       return true;
     });
-  }, [inventoryWithProduct, productNameFilter, productCategoryFilter, sourceTypeFilter]);
+  }, [inventoryWithProduct, productNameFilter, productCategoryFilter, sourceTypeFilter, hideZeroStock]);
 
   const createMutation = trpc.inventory.create.useMutation({
     onSuccess: () => { toast.success("库存记录创建成功"); refetch(); setDialogOpen(false); },
@@ -443,6 +447,20 @@ export default function InventoryPage() {
               ))}
             </SelectContent>
           </Select>
+
+          {/* 零库存显示开关 */}
+          <Button
+            variant={hideZeroStock ? "secondary" : "outline"}
+            size="sm"
+            className="whitespace-nowrap"
+            onClick={() => setHideZeroStock((v) => !v)}
+          >
+            {hideZeroStock ? (
+              <><Eye className="h-4 w-4 mr-1.5" />隐藏零库存</>
+            ) : (
+              <><EyeOff className="h-4 w-4 mr-1.5" />显示零库存</>
+            )}
+          </Button>
         </div>
 
         {/* 库存表格 */}

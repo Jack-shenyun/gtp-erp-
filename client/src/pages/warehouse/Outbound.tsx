@@ -394,6 +394,67 @@ export default function OutboundPage() {
       }
     }
 
+    // ===== 库存数量校验（硬性限制：出库数量不能超过库存数量）=====
+    for (const line of validLines) {
+      if (!line.productId || !formData.warehouseId) continue;
+      const outQty = parseFloat(line.outboundQty);
+
+      // 根据批号匹配对应库存记录
+      const batchOptions = getBatchOptions(line.productId, Number(formData.warehouseId));
+      if (batchOptions.length > 0) {
+        // 已选批号时，校验该批次的库存
+        if (line.batchNo) {
+          const matchedInv = batchOptions.find(
+            (inv: any) => (inv.batchNo || `inv-${inv.id}`) === line.batchNo
+          );
+          if (matchedInv) {
+            const availableQty = parseFloat(String(matchedInv.quantity || "0"));
+            if (outQty > availableQty) {
+              toast.error(
+                `「${line.productName}」批次 ${line.batchNo} 库存不足！` +
+                `当前库存 ${availableQty} ${line.unit || ""}，出库数量 ${outQty} ${line.unit || ""}，无法创建出库单。`
+              );
+              return;
+            }
+          }
+        } else {
+          // 未选批号时，校验该产品在仓库的总库存
+          const totalInvQty = batchOptions.reduce(
+            (sum: number, inv: any) => sum + parseFloat(String(inv.quantity || "0")),
+            0
+          );
+          if (outQty > totalInvQty) {
+            toast.error(
+              `「${line.productName}」库存不足！` +
+              `当前总库存 ${totalInvQty} ${line.unit || ""}，出库数量 ${outQty} ${line.unit || ""}，无法创建出库单。`
+            );
+            return;
+          }
+        }
+      }
+    }
+
+    // ===== 订单数量校验（软性警告：出库数量超过订单剩余数量时提示，但允许继续）=====
+    if (formData.type === "sales_out") {
+      const overOrderLines: string[] = [];
+      for (const line of validLines) {
+        const outQty = parseFloat(line.outboundQty);
+        const remainQty = line.orderQty - line.deliveredQty;
+        if (outQty > remainQty && remainQty >= 0) {
+          overOrderLines.push(
+            `「${line.productName}」订单剩余 ${remainQty} ${line.unit || ""}，本次出库 ${outQty} ${line.unit || ""}`
+          );
+        }
+      }
+      if (overOrderLines.length > 0) {
+        toast.warning(
+          `以下产品出库数量超过订单剩余数量，已超额发货：\n${overOrderLines.join("；\n")}`,
+          { duration: 5000 }
+        );
+        // 超出订单数量仅警告，不阻止提交，继续执行
+      }
+    }
+
     if (editingRecord) {
       // 编辑模式：只更新第一条
       const line = validLines[0];
@@ -1003,14 +1064,62 @@ export default function OutboundPage() {
 
                             {/* 出库数量 */}
                             <TableCell>
-                              <Input
-                                type="number"
-                                min="0"
-                                className="h-8 text-xs w-24"
-                                value={line.outboundQty}
-                                onChange={(e) => updateDetailLine(line.key, "outboundQty", e.target.value)}
-                                placeholder="数量"
-                              />
+                              {(() => {
+                                const outQty = parseFloat(line.outboundQty) || 0;
+                                // 计算可用库存
+                                let availableQty: number | null = null;
+                                let stockLabel = "";
+                                if (line.productId && formData.warehouseId) {
+                                  const opts = getBatchOptions(line.productId, Number(formData.warehouseId));
+                                  if (opts.length > 0) {
+                                    if (line.batchNo) {
+                                      const matched = opts.find((inv: any) => (inv.batchNo || `inv-${inv.id}`) === line.batchNo);
+                                      if (matched) {
+                                        availableQty = parseFloat(String(matched.quantity || "0"));
+                                        stockLabel = `库存: ${availableQty}`;
+                                      }
+                                    } else {
+                                      availableQty = opts.reduce((s: number, inv: any) => s + parseFloat(String(inv.quantity || "0")), 0);
+                                      stockLabel = `总库存: ${availableQty}`;
+                                    }
+                                  }
+                                }
+                                // 订单剩余数量
+                                const remainQty = line.orderQty - line.deliveredQty;
+                                const overStock = availableQty !== null && outQty > availableQty;
+                                const overOrder = formData.type === "sales_out" && outQty > remainQty && remainQty >= 0;
+                                return (
+                                  <div className="space-y-1">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      className={`h-8 text-xs w-24 ${
+                                        overStock
+                                          ? "border-destructive focus-visible:ring-destructive"
+                                          : overOrder
+                                          ? "border-amber-400 focus-visible:ring-amber-400"
+                                          : ""
+                                      }`}
+                                      value={line.outboundQty}
+                                      onChange={(e) => updateDetailLine(line.key, "outboundQty", e.target.value)}
+                                      placeholder="数量"
+                                    />
+                                    {stockLabel && (
+                                      <p className={`text-[10px] leading-tight ${
+                                        overStock ? "text-destructive font-medium" : "text-muted-foreground"
+                                      }`}>
+                                        {stockLabel}
+                                        {overStock && " ❗库存不足"}
+                                      </p>
+                                    )}
+                                    {overOrder && !overStock && (
+                                      <p className="text-[10px] leading-tight text-amber-500 font-medium">
+                                        订单剩余 {remainQty} ❗超额
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </TableCell>
 
                             {/* 删除 */}

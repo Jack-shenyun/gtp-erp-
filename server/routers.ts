@@ -6,6 +6,7 @@ import { ATTACHMENT_EXTENSIONS, buildUploadFolderName, normalizeDepartmentForUpl
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { saveAttachmentFile } from "./attachmentStorage";
 import {
   clearExpiredRecycleBinEntries,
@@ -81,7 +82,7 @@ import {
   notifyMaterialRequestApproved,
 } from "./emailService";
 import { getDb } from "./db";
-import { orderApprovals, salesOrders as salesOrdersTable, salesOrderItems, inventoryTransactions, users, documents,
+import { orderApprovals, salesOrders as salesOrdersTable, salesOrderItems, inventoryTransactions, inventory, users, documents,
   accountsReceivable as accountsReceivableTable,
   customers as customersTable,
   materialRequests as materialRequestsTable, customsDeclarations as customsTable,
@@ -2064,6 +2065,36 @@ export const appRouter = router({
         remark: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        // 后端库存数量校验（仅对出库类操作）
+        const outTypes = ["production_out", "sales_out", "return_out", "other_out"];
+        if (outTypes.includes(input.type) && input.productId) {
+          const db = await getDb();
+          if (db) {
+            const conditions: any[] = [
+              eq(inventory.warehouseId, input.warehouseId),
+              eq(inventory.productId, input.productId),
+            ];
+            if (input.batchNo) {
+              conditions.push(eq(inventory.batchNo, input.batchNo));
+            }
+            const invRecords = await db
+              .select()
+              .from(inventory)
+              .where(and(...conditions));
+            const totalAvailable = invRecords.reduce(
+              (sum, rec) => sum + (parseFloat(String(rec.quantity)) || 0),
+              0
+            );
+            const outQty = parseFloat(String(input.quantity)) || 0;
+            if (outQty > totalAvailable) {
+              const batchInfo = input.batchNo ? `批次 ${input.batchNo} ` : "";
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `「${input.itemName}」${batchInfo}库存不足！当前可用库存 ${totalAvailable} ${input.unit || ""}，出库数量 ${outQty} ${input.unit || ""}。`,
+              });
+            }
+          }
+        }
         return await createInventoryTransaction({ ...input, operatorId: ctx.user?.id });
       }),
     update: protectedProcedure
