@@ -1919,9 +1919,12 @@ export async function getInventory(params?: { search?: string; warehouseId?: num
   const db = await getDb();
   if (!db) return [];
 
-  let query = db.select().from(inventory);
-  const conditions = [];
+  // 实时从流水账汇总计算库存数量（动态计算，不依赖静态存储的 quantity 字段）
+  const inTypes = ["purchase_in", "production_in", "return_in", "other_in"];
+  const outTypes = ["production_out", "sales_out", "return_out", "other_out"];
 
+  // 构建库存记录的过滤条件
+  const conditions: any[] = [];
   if (params?.search) {
     conditions.push(
       or(
@@ -1931,25 +1934,43 @@ export async function getInventory(params?: { search?: string; warehouseId?: num
       )
     );
   }
-
   if (params?.warehouseId) {
     conditions.push(eq(inventory.warehouseId, params.warehouseId));
   }
-
   if (params?.status) {
     conditions.push(eq(inventory.status, params.status as "qualified" | "quarantine" | "unqualified" | "reserved"));
   }
 
+  let baseQuery = db.select().from(inventory);
   if (conditions.length > 0) {
-    query = query.where(and(...conditions)) as typeof query;
+    baseQuery = baseQuery.where(and(...conditions)) as typeof baseQuery;
   }
-
-  const result = await query
+  const rows = await baseQuery
     .orderBy(desc(inventory.createdAt))
     .limit(params?.limit || 100)
     .offset(params?.offset || 0);
 
-  return result;
+  if (rows.length === 0) return [];
+
+  // 批量查询每条库存记录的实时汇总数量
+  const ids = rows.map(r => r.id);
+  const txSums = await db
+    .select({
+      inventoryId: inventoryTransactions.inventoryId,
+      totalQty: sql<string>`SUM(CASE WHEN type IN (${sql.raw(inTypes.map(t => `'${t}'`).join(','))}) THEN quantity ELSE -quantity END)`,
+    })
+    .from(inventoryTransactions)
+    .where(and(
+      inArray(inventoryTransactions.inventoryId, ids),
+    ))
+    .groupBy(inventoryTransactions.inventoryId);
+
+  // 将实时汇总数量回写到库存记录
+  const sumMap = new Map(txSums.map(s => [s.inventoryId, parseFloat(s.totalQty || '0')]));
+  return rows.map(row => ({
+    ...row,
+    quantity: String(sumMap.has(row.id) ? sumMap.get(row.id)! : parseFloat(String(row.quantity)) || 0),
+  }));
 }
 
 export async function getInventoryById(id: number) {
@@ -1957,7 +1978,19 @@ export async function getInventoryById(id: number) {
   if (!db) return undefined;
 
   const result = await db.select().from(inventory).where(eq(inventory.id, id)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  if (result.length === 0) return undefined;
+
+  // 实时从流水账汇总计算库存数量
+  const inTypes = ["purchase_in", "production_in", "return_in", "other_in"];
+  const txSums = await db
+    .select({
+      totalQty: sql<string>`SUM(CASE WHEN type IN (${sql.raw(inTypes.map(t => `'${t}'`).join(','))}) THEN quantity ELSE -quantity END)`,
+    })
+    .from(inventoryTransactions)
+    .where(eq(inventoryTransactions.inventoryId, id));
+
+  const realQty = parseFloat(txSums[0]?.totalQty || '0') || parseFloat(String(result[0].quantity)) || 0;
+  return { ...result[0], quantity: String(realQty) };
 }
 
 export async function createInventory(data: InsertInventory) {
@@ -2289,85 +2322,56 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await ensureInventoryTransactionColumns(db);
+
+  // 1. 写入流水记录
   const result = await db.insert(inventoryTransactions).values(data);
   const txId = result[0].insertId;
 
-  // C1: 自动更新库存数量
+  // 2. 自动关联库存记录（inventory 表作为库存档案，quantity 字段不再维护，由查询时实时汇总）
   try {
     const inTypes = ["purchase_in", "production_in", "return_in", "other_in"];
-    const outTypes = ["production_out", "sales_out", "return_out", "other_out"];
-    const qty = parseFloat(String(data.quantity)) || 0;
-    // 提前声明 existing，供后续重算使用
-    let existingInvId: number | null = null;
-    if (qty > 0 && (inTypes.includes(data.type) || outTypes.includes(data.type))) {
-      const isIn = inTypes.includes(data.type);
-      // 查找现有库存记录（按仓库+产品+批次匹配）
-      const conditions: any[] = [eq(inventory.warehouseId, data.warehouseId)];
-      if (data.productId) conditions.push(eq(inventory.productId, data.productId));
-      if (data.batchNo) conditions.push(eq(inventory.batchNo, data.batchNo));
-      const existing = await db.select().from(inventory).where(and(...conditions)).limit(1);
-      if (existing.length > 0) {
-        existingInvId = existing[0].id;
-        const currentQty = parseFloat(String(existing[0].quantity)) || 0;
-        const newQty = isIn ? currentQty + qty : currentQty - qty;
-        // 先更新 beforeQty/afterQty 和 inventoryId，再重算
-        await db.update(inventoryTransactions).set({
-          beforeQty: String(currentQty),
-          afterQty: String(newQty),
-          inventoryId: existing[0].id,
-        }).where(eq(inventoryTransactions.id, txId));
-      } else if (isIn) {
-        // 入库时如果没有库存记录，自动创建
-        const newInvResult = await db.insert(inventory).values({
-          warehouseId: data.warehouseId,
-          productId: data.productId,
-          itemName: data.itemName,
-          batchNo: data.batchNo,
-          quantity: String(qty),
-          unit: data.unit,
-          status: "qualified",
-        });
-        const newInvId = newInvResult[0].insertId;
-        await db.update(inventoryTransactions).set({
-          beforeQty: "0",
-          afterQty: String(qty),
-          inventoryId: newInvId,
-        }).where(eq(inventoryTransactions.id, txId));
-        // 重算新创建的库存记录
-        await recalculateInventoryById(newInvId);
-        return txId; // 早返回，避免重复重算
-      } else {
-        // 出库时如果没有库存记录（异常情况，但需处理），创建负库存记录
-        const newInvResult = await db.insert(inventory).values({
-          warehouseId: data.warehouseId,
-          productId: data.productId,
-          itemName: data.itemName,
-          batchNo: data.batchNo,
-          quantity: String(-qty),
-          unit: data.unit,
-          status: "qualified",
-        });
-        const newInvId = newInvResult[0].insertId;
-        await db.update(inventoryTransactions).set({
-          beforeQty: "0",
-          afterQty: String(-qty),
-          inventoryId: newInvId,
-        }).where(eq(inventoryTransactions.id, txId));
-        // 重算新创建的库存记录
-        await recalculateInventoryById(newInvId);
-        return txId;
-      }
-    }
-    // 已有库存记录的情况：在流水写入后重算（替代简单加减法）
-    if (existingInvId) {
-      await recalculateInventoryById(existingInvId);
-    }
-  } catch (e) {
-    console.error("自动更新库存失败:", e);
-  }
+    const isIn = inTypes.includes(data.type);
 
-  // C2: 销售出库状态联动已移至前端所有明细插入完成后统一调用
-  // trpc.salesOrders.syncShipmentStatus({ orderId }) 在 Outbound.tsx 中触发
+    // 查找现有库存档案（按仓库+产品+批次匹配）
+    const conditions: any[] = [eq(inventory.warehouseId, data.warehouseId)];
+    if (data.productId) conditions.push(eq(inventory.productId, data.productId));
+    if (data.batchNo) conditions.push(eq(inventory.batchNo, data.batchNo));
+    const existing = await db.select().from(inventory).where(and(...conditions)).limit(1);
+
+    let invId: number;
+    if (existing.length > 0) {
+      invId = existing[0].id;
+    } else if (isIn) {
+      // 入库时如果没有库存档案，自动创建（quantity 初始为 0，实际数量由查询时实时计算）
+      const newInvResult = await db.insert(inventory).values({
+        warehouseId: data.warehouseId,
+        productId: data.productId,
+        itemName: data.itemName,
+        batchNo: data.batchNo,
+        quantity: "0", // 占位，实际数量由流水汇总实时计算
+        unit: data.unit,
+        status: "qualified",
+      });
+      invId = newInvResult[0].insertId;
+    } else {
+      // 出库但无库存档案（异常），仍创建档案以保持关联
+      const newInvResult = await db.insert(inventory).values({
+        warehouseId: data.warehouseId,
+        productId: data.productId,
+        itemName: data.itemName,
+        batchNo: data.batchNo,
+        quantity: "0",
+        unit: data.unit,
+        status: "qualified",
+      });
+      invId = newInvResult[0].insertId;
+    }
+
+    // 3. 更新流水的 inventoryId 关联
+    await db.update(inventoryTransactions).set({ inventoryId: invId }).where(eq(inventoryTransactions.id, txId));
+  } catch (e) {
+    console.error("[库存] 关联库存档案失败:", e);
+  }
 
   return txId;
 }
@@ -2383,11 +2387,8 @@ export async function deleteInventoryTransaction(id: number, deletedBy?: number)
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // 1. 获取流水信息，记录 inventoryId 用于删除后重算
-  const [tx] = await db.select().from(inventoryTransactions).where(eq(inventoryTransactions.id, id)).limit(1);
-  const inventoryIdToRecalc = tx?.inventoryId ?? null;
-
-  // 2. 执行物理删除（存入回收站）
+  // 直接删除流水记录（存入回收站）
+  // 库存数量无需重算：查询时实时从剩余流水汇总计算，删除流水后下次查询自动反映正确库存
   await deleteSingleWithRecycle(db, {
     table: inventoryTransactions,
     idColumn: inventoryTransactions.id,
@@ -2396,11 +2397,6 @@ export async function deleteInventoryTransaction(id: number, deletedBy?: number)
     sourceTable: "inventory_transactions",
     deletedBy,
   });
-
-  // 3. 删除后重新从剩余流水汇总计算库存（彻底解决加减法不一致问题）
-  if (inventoryIdToRecalc) {
-    await recalculateInventoryById(inventoryIdToRecalc);
-  }
 }
 
 // ==================== 操作日志 CRUD ====================

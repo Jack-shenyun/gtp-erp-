@@ -3845,8 +3845,29 @@ export const appRouter = router({
           console.warn("[Email] 入库审批通知失败：", e);
         }
       }
-      // 邮件通知：状态变为「已完成」时，通知销售部和财务部
+      // 库存实时联动：状态变为「已完成」时，自动写入 production_in 库存流水
       if (input.data.status === "completed" && oldEntry?.status !== "completed") {
+        try {
+          const entryQty = parseFloat(String(input.data.quantity || oldEntry?.quantity || 0));
+          if (entryQty > 0 && oldEntry?.targetWarehouseId) {
+            await createInventoryTransaction({
+              warehouseId: oldEntry.targetWarehouseId,
+              productId: oldEntry.productId ?? undefined,
+              type: "production_in",
+              documentNo: oldEntry.entryNo,
+              itemName: oldEntry.productName || "生产入库",
+              batchNo: oldEntry.batchNo ?? undefined,
+              sterilizationBatchNo: oldEntry.sterilizationBatchNo ?? undefined,
+              quantity: String(entryQty),
+              unit: oldEntry.unit ?? undefined,
+              relatedOrderId: oldEntry.productionOrderId ?? undefined,
+              remark: `生产入库申请 ${oldEntry.entryNo} 完成入库`,
+            });
+          }
+        } catch (e) {
+          console.warn("[库存] 生产入库流水写入失败:", e);
+        }
+        // 邮件通知：通知销售部和财务部
         try {
           const salesEmails = await getUserEmailsByDepartment(["销售部"]);
           const financeEmails = await getUserEmailsByDepartment(["财务部"]);
