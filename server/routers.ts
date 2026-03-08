@@ -76,6 +76,7 @@ import {
   ensureGoodsReceiptsTable,
   getInspectionRequirements, getInspectionRequirementById, createInspectionRequirement, updateInspectionRequirement, deleteInspectionRequirement,
   getIqcInspections, getIqcInspectionById, createIqcInspection, updateIqcInspection, deleteIqcInspection,
+  ensureIqcInspectionsTable,
 } from "./db";
 import {
   notifySterilizationArrived,
