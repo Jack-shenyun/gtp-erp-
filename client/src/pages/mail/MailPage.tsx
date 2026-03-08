@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import ERPLayout from "@/components/ERPLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -17,8 +16,9 @@ import {
 import { toast } from "sonner";
 import {
   Inbox, Send, FileText, Trash2, Users, RefreshCw, Plus, Search,
-  Star, StarOff, Eye, Reply, Languages, Sparkles, Paperclip, X, ChevronLeft,
+  Star, StarOff, Eye, Reply, Languages, Sparkles, Paperclip, X, ChevronLeft, ArrowLeft, Mail,
 } from "lucide-react";
+import { useLocation } from "wouter";
 
 type Folder = "inbox" | "sent" | "draft" | "trash";
 
@@ -71,6 +71,7 @@ function formatTime(val: string | null | undefined): string {
 }
 
 export default function MailPage() {
+  const [, setLocation] = useLocation();
   const [folder, setFolder] = useState<Folder>("inbox");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -210,18 +211,37 @@ export default function MailPage() {
   const detail: EmailDetail | null = (detailQuery.data as any) || null;
 
   return (
-    <ERPLayout>
-      <div className="flex h-full min-h-[calc(100vh-64px)]">
-        {/* 左侧导航 */}
-        <aside className="w-48 border-r bg-gray-50 flex flex-col py-4 gap-1 shrink-0">
-          <Button
-            className="mx-3 mb-3"
-            size="sm"
-            onClick={() => openCompose()}
+    <div className="flex flex-col h-screen bg-white overflow-hidden">
+      {/* 独立顶部导航栏 */}
+      <header className="flex-none h-14 flex items-center justify-between px-4 border-b bg-white shadow-sm z-50">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setLocation("/")}
+            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
           >
-            <Plus className="w-4 h-4 mr-1" /> 写邮件
-          </Button>
+            <ArrowLeft className="w-4 h-4" />
+            返回 ERP
+          </button>
+          <Separator orientation="vertical" className="h-5" />
+          <div className="flex items-center gap-2">
+            <Mail className="w-5 h-5 text-blue-600" />
+            <span className="text-base font-semibold text-slate-800">邮件协同</span>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => openCompose()}
+          className="bg-blue-600 hover:bg-blue-700 text-white"
+        >
+          <Plus className="w-4 h-4 mr-1" /> 写邮件
+        </Button>
+      </header>
 
+      {/* 主体区域 */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* 左侧导航 */}
+         <aside className="w-48 border-r bg-gray-50 flex flex-col py-4 gap-1 shrink-0">
           {(Object.keys(FOLDER_CONFIG) as Folder[]).map((f) => {
             const { label, icon: Icon } = FOLDER_CONFIG[f];
             return (
@@ -567,7 +587,7 @@ export default function MailPage() {
           </div>
         )}
       </div>
-
+      </div>
       {/* 写邮件弹窗 */}
       <Dialog open={showCompose} onOpenChange={(open) => { if (!open) { setShowCompose(false); } }}>
         <DialogContent className="max-w-2xl">
@@ -622,6 +642,6 @@ export default function MailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ERPLayout>
+    </div>
   );
 }
