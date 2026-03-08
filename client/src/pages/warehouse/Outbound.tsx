@@ -1171,8 +1171,8 @@ export default function OutboundPage() {
       </DraggableDialog>
 
       {/* ==================== 销售订单选择弹窗 ==================== */}
-      <Dialog open={soDialogOpen} onOpenChange={setSoDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+      <DraggableDialog open={soDialogOpen} onOpenChange={setSoDialogOpen} defaultWidth={800} defaultHeight={500}>
+        <DraggableDialogContent>
           <DialogHeader>
             <DialogTitle>选择关联销售订单</DialogTitle>
           </DialogHeader>
@@ -1242,10 +1242,9 @@ export default function OutboundPage() {
               </TableBody>
             </Table>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ==================== 出库单详情对话框 ==================== */}
+        </DraggableDialogContent>
+      </DraggableDialog>
+      {/* ==================== 出库单详情对话框框 ==================== */}
       <DraggableDialog
         open={detailOpen}
         onOpenChange={setDetailOpen}

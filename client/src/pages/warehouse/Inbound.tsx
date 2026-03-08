@@ -966,8 +966,8 @@ export default function InboundPage() {
       </DraggableDialog>
 
       {/* ==================== 采购订单选择弹窗 ==================== */}
-      <Dialog open={poDialogOpen} onOpenChange={setPoDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+      <DraggableDialog open={poDialogOpen} onOpenChange={setPoDialogOpen} defaultWidth={800} defaultHeight={550}>
+        <DraggableDialogContent>
           <DialogHeader>
             <DialogTitle>选择采购订单</DialogTitle>
           </DialogHeader>
@@ -1022,12 +1022,12 @@ export default function InboundPage() {
               </TableBody>
             </Table>
           </div>
-        </DialogContent>
-      </Dialog>
+        </DraggableDialogContent>
+      </DraggableDialog>
 
       {/* ==================== 销售订单选择弹窗（退货） ==================== */}
-      <Dialog open={soDialogOpen} onOpenChange={setSoDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+      <DraggableDialog open={soDialogOpen} onOpenChange={setSoDialogOpen} defaultWidth={800} defaultHeight={500}>
+        <DraggableDialogContent>
           <DialogHeader>
             <DialogTitle>选择退货销售订单</DialogTitle>
           </DialogHeader>
@@ -1076,12 +1076,12 @@ export default function InboundPage() {
               </TableBody>
             </Table>
           </div>
-        </DialogContent>
-      </Dialog>
+        </DraggableDialogContent>
+      </DraggableDialog>
 
       {/* ==================== 生产入库申请选择弹窗 ==================== */}
-      <Dialog open={pweDialogOpen} onOpenChange={setPweDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+      <DraggableDialog open={pweDialogOpen} onOpenChange={setPweDialogOpen} defaultWidth={900} defaultHeight={550}>
+        <DraggableDialogContent>
           <DialogHeader>
             <DialogTitle>选择生产入库申请</DialogTitle>
           </DialogHeader>
@@ -1134,8 +1134,8 @@ export default function InboundPage() {
               </TableBody>
             </Table>
           </div>
-        </DialogContent>
-      </Dialog>
+        </DraggableDialogContent>
+      </DraggableDialog>
 
       {/* ==================== 详情弹窗 ==================== */}
       {viewingRecord && (
