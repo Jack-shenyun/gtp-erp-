@@ -87,8 +87,10 @@ type FormData = {
   documentNo: string;
   type: string;
   warehouseId: string;
-  relatedOrderId: string;         // 采购订单ID / 销售订单ID
+  relatedOrderId: string;         // 销售订单ID（退货用）
   relatedEntryId: string;         // 生产入库申请ID
+  goodsReceiptId: string;         // 采购到货单ID
+  goodsReceiptNo: string;         // 采购到货单号（显示用）
   supplierName: string;           // 采购入库时的供应商名称
   remark: string;
 };
@@ -115,13 +117,15 @@ export default function InboundPage() {
     warehouseId: "",
     relatedOrderId: "",
     relatedEntryId: "",
+    goodsReceiptId: "",
+    goodsReceiptNo: "",
     supplierName: "",
     remark: "",
   });
   const [detailLines, setDetailLines] = useState<InboundDetailLine[]>([]);
 
   // ---- 来源单据选择弹窗 ----
-  const [poDialogOpen, setPoDialogOpen]   = useState(false);  // 采购订单弹窗
+  const [grDialogOpen, setGrDialogOpen]   = useState(false);  // 采购到货单弹窗
   const [soDialogOpen, setSoDialogOpen]   = useState(false);  // 销售订单弹窗（退货）
   const [pweDialogOpen, setPweDialogOpen] = useState(false);  // 生产入库申请弹窗
   const [sourceSearch, setSourceSearch]   = useState("");
@@ -131,15 +135,8 @@ export default function InboundPage() {
   const { data: productList = [] }    = trpc.products.list.useQuery({ limit: 1000 });
   const { data: rawData = [], refetch } = trpc.inventoryTransactions.list.useQuery({ limit: 200 });
 
-  // 采购订单（已审批/已下单/部分收货）
-  const { data: poApproved = [] }         = trpc.purchaseOrders.list.useQuery({ status: "approved", limit: 200 });
-  const { data: poOrdered = [] }          = trpc.purchaseOrders.list.useQuery({ status: "ordered", limit: 200 });
-  const { data: poPartialReceived = [] }  = trpc.purchaseOrders.list.useQuery({ status: "partial_received", limit: 200 });
-  const purchaseOrderList = [
-    ...(poApproved as any[]),
-    ...(poOrdered as any[]),
-    ...(poPartialReceived as any[]),
-  ];
+  // 采购到货单（质检合格）
+  const { data: goodsReceiptList = [] } = trpc.goodsReceipts.list.useQuery({ status: "passed", limit: 200 });
 
   // 销售订单（已发货/部分发货/已完成，用于退货）
   const { data: soShipped = [] }    = trpc.salesOrders.list.useQuery({ status: "shipped", limit: 200 });
@@ -161,12 +158,12 @@ export default function InboundPage() {
   const products = (productList as ProductOption[]) || [];
   const productsById = new Map(products.map((p) => [p.id, p]));
 
-  // 选中采购订单详情
-  const selectedPoId = formData.relatedOrderId && formData.type === "purchase_in"
-    ? Number(formData.relatedOrderId) : null;
-  const { data: poDetail } = trpc.purchaseOrders.getById.useQuery(
-    { id: selectedPoId! },
-    { enabled: !!selectedPoId }
+  // 选中采购到货单详情
+  const selectedGrId = formData.goodsReceiptId && formData.type === "purchase_in"
+    ? Number(formData.goodsReceiptId) : null;
+  const { data: grDetail } = trpc.goodsReceipts.getById.useQuery(
+    { id: selectedGrId! },
+    { enabled: !!selectedGrId }
   );
 
   // 选中销售订单详情（退货）
@@ -177,30 +174,30 @@ export default function InboundPage() {
     { enabled: !!selectedSoId }
   );
 
-  // 采购订单选择后自动加载明细
+  // 采购到货单选择后自动加载明细
   useEffect(() => {
-    if (poDetail?.items && formData.type === "purchase_in" && selectedPoId) {
-      const lines: InboundDetailLine[] = (poDetail.items as any[]).map((item: any, idx: number) => {
+    if (grDetail?.items && formData.type === "purchase_in" && selectedGrId) {
+      const lines: InboundDetailLine[] = (grDetail.items as any[]).map((item: any, idx: number) => {
         const product = item.productId ? productsById.get(Number(item.productId)) : null;
         return {
-          key: `po-${selectedPoId}-${item.id || idx}`,
+          key: `gr-${selectedGrId}-${item.id || idx}`,
           productId: item.productId ? Number(item.productId) : 0,
           productCode: item.materialCode || product?.code || "",
           productName: item.materialName || product?.name || "",
           specification: item.specification || product?.specification || "",
           unit: item.unit || product?.unit || "",
-          sourceQty: parseFloat(item.quantity || "0"),
-          receivedQty: parseFloat(item.receivedQty || "0"),
-          inboundQty: String(Math.max(0, parseFloat(item.quantity || "0") - parseFloat(item.receivedQty || "0"))),
-          batchNo: "",
-          sterilizationBatchNo: "",
+          sourceQty: parseFloat(item.receivedQty || "0"),
+          receivedQty: parseFloat(item.qualifiedQty || item.receivedQty || "0"),
+          inboundQty: String(parseFloat(item.qualifiedQty || item.receivedQty || "0")),
+          batchNo: item.batchNo || "",
+          sterilizationBatchNo: item.sterilizationBatchNo || "",
           isMedicalDevice: product?.isMedicalDevice ?? false,
           isSterilized: product?.isSterilized ?? false,
         };
       });
       setDetailLines(lines);
     }
-  }, [poDetail, selectedPoId, formData.type]);
+  }, [grDetail, selectedGrId, formData.type]);
 
   // 销售订单选择后自动加载明细（退货）
   useEffect(() => {
@@ -258,6 +255,8 @@ export default function InboundPage() {
       warehouseId: "",
       relatedOrderId: "",
       relatedEntryId: "",
+      goodsReceiptId: "",
+      goodsReceiptNo: "",
       supplierName: "",
       remark: "",
     });
@@ -318,13 +317,14 @@ export default function InboundPage() {
     });
   };
 
-  // 选择采购订单
-  const handleSelectPurchaseOrder = (order: any) => {
-    setPoDialogOpen(false);
+  // 选择采购到货单
+  const handleSelectGoodsReceipt = (receipt: any) => {
+    setGrDialogOpen(false);
     setFormData((prev) => ({
       ...prev,
-      relatedOrderId: String(order.id),
-      supplierName: order.supplierName || "",
+      goodsReceiptId: String(receipt.id),
+      goodsReceiptNo: receipt.receiptNo || "",
+      supplierName: receipt.supplierName || "",
     }));
   };
 
@@ -478,10 +478,10 @@ export default function InboundPage() {
   });
 
   // 来源弹窗搜索过滤
-  const filteredPO = purchaseOrderList.filter((o: any) => {
+  const filteredGR = (goodsReceiptList as any[]).filter((r: any) => {
     if (!sourceSearch) return true;
     const q = sourceSearch.toLowerCase();
-    return o.orderNo?.toLowerCase().includes(q) || (o.supplierName || "").toLowerCase().includes(q);
+    return r.receiptNo?.toLowerCase().includes(q) || (r.supplierName || "").toLowerCase().includes(q) || (r.purchaseOrderNo || "").toLowerCase().includes(q);
   });
   const filteredSO = salesOrderList.filter((o: any) => {
     if (!sourceSearch) return true;
@@ -496,9 +496,10 @@ export default function InboundPage() {
 
   // 获取当前关联单据显示名称
   const getRelatedLabel = () => {
-    if (formData.type === "purchase_in" && formData.relatedOrderId) {
-      const po = purchaseOrderList.find((o: any) => String(o.id) === formData.relatedOrderId);
-      return po ? `${(po as any).orderNo}（${(po as any).supplierName || ""}）` : `#${formData.relatedOrderId}`;
+    if (formData.type === "purchase_in" && formData.goodsReceiptId) {
+      return formData.goodsReceiptNo
+        ? `${formData.goodsReceiptNo}（${formData.supplierName || ""}）`
+        : `#${formData.goodsReceiptId}`;
     }
     if (formData.type === "return_in" && formData.relatedOrderId) {
       const so = salesOrderList.find((o: any) => String(o.id) === formData.relatedOrderId);
@@ -690,7 +691,7 @@ export default function InboundPage() {
                   <Select
                     value={formData.type}
                     onValueChange={(v) => {
-                      setFormData((p) => ({ ...p, type: v, relatedOrderId: "", relatedEntryId: "", supplierName: "" }));
+                      setFormData((v) => ({ ...v, type: v, relatedOrderId: "", relatedEntryId: "", goodsReceiptId: "", goodsReceiptNo: "", supplierName: "" }));
                       setDetailLines([]);
                     }}
                   >
@@ -732,7 +733,7 @@ export default function InboundPage() {
                   <div className="flex-1 rounded-md border bg-muted/30 px-3 py-2 text-sm">
                     {getRelatedLabel() || (
                       <span className="text-muted-foreground">
-                        {formData.type === "purchase_in" && "尚未选择采购订单"}
+                        {formData.type === "purchase_in" && "尚未选择采购到货单（需质检合格）"}
                         {formData.type === "return_in" && "尚未选择销售订单"}
                         {formData.type === "production_in" && "尚未选择生产入库申请"}
                       </span>
@@ -743,22 +744,22 @@ export default function InboundPage() {
                     variant="outline"
                     onClick={() => {
                       setSourceSearch("");
-                      if (formData.type === "purchase_in") setPoDialogOpen(true);
+                      if (formData.type === "purchase_in") setGrDialogOpen(true);
                       else if (formData.type === "return_in") setSoDialogOpen(true);
                       else if (formData.type === "production_in") setPweDialogOpen(true);
                     }}
                   >
-                    {formData.type === "purchase_in" && "选择采购订单"}
+                    {formData.type === "purchase_in" && "选择到货单"}
                     {formData.type === "return_in" && "选择销售订单"}
                     {formData.type === "production_in" && "选择入库申请"}
                   </Button>
-                  {(formData.relatedOrderId || formData.relatedEntryId) && (
+                  {(formData.relatedOrderId || formData.relatedEntryId || formData.goodsReceiptId) && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
                       onClick={() => {
-                        setFormData((p) => ({ ...p, relatedOrderId: "", relatedEntryId: "", supplierName: "" }));
+                        setFormData((p) => ({ ...p, relatedOrderId: "", relatedEntryId: "", goodsReceiptId: "", goodsReceiptNo: "", supplierName: "" }));
                         setDetailLines([]);
                       }}
                     >
@@ -784,7 +785,7 @@ export default function InboundPage() {
 
               {detailLines.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground text-sm">
-                  {formData.type === "purchase_in" && "请先选择采购订单，系统将自动带入物料明细"}
+                  {formData.type === "purchase_in" && "请先选择质检合格的采购到货单，系统将自动带入物料明细"}
                   {formData.type === "production_in" && "请先选择生产入库申请，系统将自动带入产品信息"}
                   {formData.type === "return_in" && "请选择销售订单或手动添加退货明细"}
                   {formData.type === "other_in" && "请点击「添加明细」手动添加入库物料"}
@@ -965,16 +966,16 @@ export default function InboundPage() {
         </DraggableDialogContent>
       </DraggableDialog>
 
-      {/* ==================== 采购订单选择弹窗 ==================== */}
-      <DraggableDialog open={poDialogOpen} onOpenChange={setPoDialogOpen} defaultWidth={800} defaultHeight={550}>
+      {/* ==================== 采购到货单选择弹窗 ==================== */}
+      <DraggableDialog open={grDialogOpen} onOpenChange={setGrDialogOpen} defaultWidth={860} defaultHeight={550}>
         <DraggableDialogContent>
           <DialogHeader>
-            <DialogTitle>选择采购订单</DialogTitle>
+            <DialogTitle>选择采购到货单（质检合格）</DialogTitle>
           </DialogHeader>
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="搜索订单号、供应商名称..."
+              placeholder="搜索到货单号、采购单号、供应商名称..."
               value={sourceSearch}
               onChange={(e) => setSourceSearch(e.target.value)}
               className="pl-9"
@@ -984,38 +985,38 @@ export default function InboundPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead>订单号</TableHead>
+                  <TableHead>到货单号</TableHead>
+                  <TableHead>采购订单号</TableHead>
                   <TableHead>供应商</TableHead>
-                  <TableHead>订单日期</TableHead>
-                  <TableHead>预计到货</TableHead>
-                  <TableHead>状态</TableHead>
+                  <TableHead>到货日期</TableHead>
+                  <TableHead>质检结果</TableHead>
                   <TableHead className="w-[80px]">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredPO.length === 0 ? (
+                {filteredGR.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      暂无待收货的采购订单
+                      暂无质检合格的采购到货单
                     </TableCell>
                   </TableRow>
-                ) : filteredPO.map((order: any) => (
+                ) : filteredGR.map((receipt: any) => (
                   <TableRow
-                    key={order.id}
+                    key={receipt.id}
                     className="hover:bg-muted/30 cursor-pointer"
-                    onClick={() => handleSelectPurchaseOrder(order)}
+                    onClick={() => handleSelectGoodsReceipt(receipt)}
                   >
-                    <TableCell className="font-mono text-sm font-medium">{order.orderNo}</TableCell>
-                    <TableCell className="text-sm">{order.supplierName || "-"}</TableCell>
-                    <TableCell className="text-sm">{formatDate(order.orderDate)}</TableCell>
-                    <TableCell className="text-sm">{formatDate(order.expectedDate)}</TableCell>
+                    <TableCell className="font-mono text-sm font-medium">{receipt.receiptNo}</TableCell>
+                    <TableCell className="text-sm font-mono">{receipt.purchaseOrderNo || "-"}</TableCell>
+                    <TableCell className="text-sm">{receipt.supplierName || "-"}</TableCell>
+                    <TableCell className="text-sm">{formatDate(receipt.receiptDate)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">
-                        {{ approved: "已审批", ordered: "已下单", partial_received: "部分收货" }[order.status as string] || order.status}
+                      <Badge variant="outline" className="text-green-600 border-green-300">
+                        {{ pass: "合格", conditional_pass: "有条件合格" }[receipt.inspectionResult as string] || "合格"}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Button size="sm" variant="outline" onClick={() => handleSelectPurchaseOrder(order)}>选择</Button>
+                      <Button size="sm" variant="outline" onClick={() => handleSelectGoodsReceipt(receipt)}>选择</Button>
                     </TableCell>
                   </TableRow>
                 ))}
