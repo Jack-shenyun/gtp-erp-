@@ -1,4 +1,3 @@
-import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useState, useEffect, useRef } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import {
@@ -45,7 +44,6 @@ import { trpc } from "@/lib/trpc";
 import { usePermission } from "@/hooks/usePermission";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DeliveryNotePrint } from "@/components/print";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 // ==================== 常量 ====================
 const typeMap: Record<string, string> = {
@@ -660,7 +658,7 @@ export default function OutboundPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {record.createdAt ? formatDate(record.createdAt) : "-"}
+                    {record.createdAt ? new Date(record.createdAt).toLocaleDateString("zh-CN") : "-"}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
@@ -1386,7 +1384,7 @@ export default function OutboundPage() {
                   <div>
                     <FieldRow label="出库时间">
                       {viewingRecord.createdAt
-                        ? formatDateTime(viewingRecord.createdAt)
+                        ? new Date(viewingRecord.createdAt).toLocaleString("zh-CN")
                         : "-"}
                     </FieldRow>
                   </div>
