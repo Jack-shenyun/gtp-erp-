@@ -20,7 +20,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { trpc } from "@/_core/trpc";
+import { trpc } from "@/lib/trpc";
 import {
   Receipt, Plus, MoreHorizontal, Eye, CheckCircle2, XCircle,
   Search, Trash2, Upload, Loader2, FileText, X, AlertCircle,
