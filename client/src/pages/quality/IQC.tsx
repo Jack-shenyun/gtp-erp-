@@ -584,110 +584,96 @@ export default function IQCPage() {
   if (viewMode === "list") {
     return (
       <ERPLayout>
-        <div className="flex flex-col h-full">
-          {/* 顶部栏 */}
-          <div className="border-b bg-background px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <ClipboardCheck className="w-5 h-5 text-primary" />
-                <h1 className="text-lg font-semibold">来料检验</h1>
-                <span className="text-sm text-muted-foreground">IQC</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button onClick={openCreate} size="sm" className="gap-1.5">
-                  <Plus className="w-3.5 h-3.5" />新建
-                </Button>
+        <div className="p-6 space-y-4">
+          {/* 标题栏 */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <PackageSearch className="w-6 h-6 text-primary" />
+              <div>
+                <h1 className="text-xl font-bold">来料检验（IQC）</h1>
+                <p className="text-sm text-muted-foreground">原材料入库前的质量检验</p>
               </div>
             </div>
+            <Button onClick={openCreate} className="gap-2">
+              <Plus className="w-4 h-4" />新建检验
+            </Button>
+          </div>
 
-            {/* 搜索和过滤 */}
-            <div className="flex items-center gap-3 mt-3">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="搜索编号、产品、供应商..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-8 h-8 text-sm"
-                />
-              </div>
-              <div className="flex items-center gap-1">
-                {[
-                  { key: "all", label: "全部", count: stats.total },
-                  { key: "pending", label: "待检验", count: stats.pending },
-                  { key: "passed", label: "合格", count: stats.passed },
-                  { key: "failed", label: "不合格", count: stats.failed },
-                  { key: "conditional_pass", label: "条件合格", count: stats.conditional },
-                ].map((f) => (
-                  <button
-                    key={f.key}
-                    onClick={() => setResultFilter(f.key)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                      resultFilter === f.key
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                  >
-                    {f.label} ({f.count})
-                  </button>
-                ))}
-              </div>
+          {/* 筛选栏 */}
+          <div className="flex gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input placeholder="搜索检验编号、产品名称..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
+            <Select value={resultFilter} onValueChange={setResultFilter}>
+              <SelectTrigger className="w-36"><SelectValue placeholder="检验结果" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="pending">待检验</SelectItem>
+                <SelectItem value="passed">合格</SelectItem>
+                <SelectItem value="failed">不合格</SelectItem>
+                <SelectItem value="conditional_pass">条件合格</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 统计卡片 */}
+          <div className="grid grid-cols-4 gap-4">
+            {[
+              { label: "待检验", count: stats.pending, color: "text-blue-600" },
+              { label: "合格", count: stats.passed, color: "text-green-600" },
+              { label: "不合格", count: stats.failed, color: "text-red-600" },
+              { label: "条件合格", count: stats.conditional, color: "text-orange-600" },
+            ].map((s) => (
+              <div key={s.label} className="bg-card border rounded-lg p-4">
+                <div className={`text-2xl font-bold ${s.color}`}>{s.count}</div>
+                <div className="text-sm text-muted-foreground">{s.label}</div>
+              </div>
+            ))}
           </div>
 
           {/* 列表 */}
-          <div className="flex-1 overflow-auto">
+          <div className="border rounded-lg overflow-hidden">
             <Table>
-              <TableHeader className="sticky top-0 bg-muted/50 z-10">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[140px] font-medium">检验编号</TableHead>
-                  <TableHead className="font-medium">产品名称</TableHead>
-                  <TableHead className="font-medium">供应商</TableHead>
-                  <TableHead className="font-medium">批次号</TableHead>
-                  <TableHead className="w-[100px] font-medium">到货数量</TableHead>
-                  <TableHead className="w-[100px] font-medium">检验员</TableHead>
-                  <TableHead className="w-[100px] font-medium">检验日期</TableHead>
-                  <TableHead className="w-[90px] font-medium">结果</TableHead>
-                  <TableHead className="w-[50px]" />
+              <TableHeader>
+                <TableRow>
+                  <TableHead>检验编号</TableHead>
+                  <TableHead>到货单号</TableHead>
+                  <TableHead>产品名称</TableHead>
+                  <TableHead>规格</TableHead>
+                  <TableHead>供应商</TableHead>
+                  <TableHead>批次号</TableHead>
+                  <TableHead>到货数量</TableHead>
+                  <TableHead>抽样数量</TableHead>
+                  <TableHead>合格数量</TableHead>
+                  <TableHead>检验员</TableHead>
+                  <TableHead>检验日期</TableHead>
+                  <TableHead>结果</TableHead>
+                  <TableHead className="w-16">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {list.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-16">
-                      <div className="flex flex-col items-center gap-2">
-                        <PackageSearch className="w-10 h-10 text-muted-foreground/50" />
-                        <span>暂无检验记录</span>
-                        <Button variant="outline" size="sm" onClick={openCreate} className="mt-2">
-                          <Plus className="w-3.5 h-3.5 mr-1" />新建检验
-                        </Button>
-                      </div>
-                    </TableCell>
+                    <TableCell colSpan={13} className="text-center text-muted-foreground py-8">暂无检验记录</TableCell>
                   </TableRow>
                 ) : list.map((row: any) => (
-                  <TableRow
-                    key={row.id}
-                    className="cursor-pointer hover:bg-muted/30 transition-colors"
-                    onClick={() => openDetail(row.id)}
-                  >
+                  <TableRow key={row.id} className="cursor-pointer hover:bg-muted/30" onClick={() => openDetail(row.id)}>
                     <TableCell className="font-mono text-sm text-primary">{row.inspectionNo}</TableCell>
-                    <TableCell>
-                      <div className="font-medium text-sm">{row.productName}</div>
-                      {row.specification && (
-                        <div className="text-xs text-muted-foreground">{row.specification}</div>
-                      )}
-                    </TableCell>
+                    <TableCell className="text-sm">{row.goodsReceiptNo ?? "-"}</TableCell>
+                    <TableCell>{row.productName}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{row.specification ?? "-"}</TableCell>
                     <TableCell className="text-sm">{row.supplierName ?? "-"}</TableCell>
-                    <TableCell className="text-sm font-mono">{row.batchNo ?? "-"}</TableCell>
-                    <TableCell className="text-sm">
-                      {row.receivedQty ? `${parseFloat(row.receivedQty)} ${row.unit ?? ""}` : "-"}
-                    </TableCell>
+                    <TableCell className="text-sm">{row.batchNo ?? "-"}</TableCell>
+                    <TableCell className="text-sm">{row.receivedQty ? `${parseFloat(row.receivedQty)} ${row.unit ?? ""}` : "-"}</TableCell>
+                    <TableCell className="text-sm">{row.sampleQty ? parseFloat(row.sampleQty) : "-"}</TableCell>
+                    <TableCell className="text-sm">{row.qualifiedQty ? parseFloat(row.qualifiedQty) : "-"}</TableCell>
                     <TableCell className="text-sm">{row.inspectorName ?? "-"}</TableCell>
                     <TableCell className="text-sm">{row.inspectionDate ? formatDate(row.inspectionDate) : "-"}</TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_MAP[row.result]?.color ?? "bg-slate-100 text-slate-600"}`}>
+                      <Badge variant={RESULT_MAP[row.result]?.variant ?? "secondary"}>
                         {RESULT_MAP[row.result]?.label ?? row.result}
-                      </span>
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
