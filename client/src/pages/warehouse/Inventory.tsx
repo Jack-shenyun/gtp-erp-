@@ -169,6 +169,14 @@ export default function InventoryPage() {
     onError: (e) => toast.error("删除失败", { description: e.message }),
   });
 
+  const recalculateAllMutation = trpc.inventory.recalculateAll.useMutation({
+    onSuccess: (result) => {
+      toast.success(`库存重算完成：已更新 ${result.updated} 条记录${result.errors > 0 ? `，${result.errors} 条失败` : ''}`);
+      refetch();
+    },
+    onError: (e) => toast.error("重算失败：" + e.message),
+  });
+
   const createTxMutation = trpc.inventoryTransactions.create.useMutation({
     onSuccess: () => { toast.success(`库存${adjustType === "in" ? "调入" : "调出"}成功`); refetch(); setAdjustDialogOpen(false); },
     onError: (e) => toast.error("调整失败", { description: e.message }),
@@ -335,6 +343,20 @@ export default function InventoryPage() {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-1" />刷新
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (confirm('确认要重算所有库存数量？\n\n系统将以流水账为唯一依据，重新汇总计算每条库存记录的实际数量。')) {
+                  recalculateAllMutation.mutate();
+                }
+              }}
+              disabled={recalculateAllMutation.isPending}
+              title="以流水账为唯一数据源，重新汇总计算所有库存数量"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${recalculateAllMutation.isPending ? 'animate-spin' : ''}`} />
+              重算库存
             </Button>
             <Button onClick={handleAdd}>
               <Plus className="h-4 w-4 mr-1" />新增库存

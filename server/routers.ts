@@ -18,7 +18,7 @@ import {
   getSalesOrders, getSalesOrderById, getSalesOrderItems, createSalesOrder, updateSalesOrder, deleteSalesOrder, getNextSalesOrderNo, getLastSalePrices,
   getPurchaseOrders, getPurchaseOrderById, getPurchaseOrderItems, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder,
   getProductionOrders, getProductionOrderById, createProductionOrder, updateProductionOrder, deleteProductionOrder,
-  getInventory, getInventoryById, createInventory, updateInventory, deleteInventory,
+  getInventory, getInventoryById, createInventory, updateInventory, deleteInventory, recalculateAllInventory, recalculateInventoryById,
   getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse,
   getInventoryTransactions, createInventoryTransaction, updateInventoryTransaction, deleteInventoryTransaction,
   getOperationLogs, createOperationLog, clearOperationLogs,
@@ -1587,6 +1587,21 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await deleteInventory(input.id);
+        return { success: true };
+      }),
+
+    // 一键重算所有库存（管理员修复工具）
+    recalculateAll: protectedProcedure
+      .mutation(async () => {
+        const result = await recalculateAllInventory();
+        return result;
+      }),
+
+    // 重算单个库存记录
+    recalculateById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await recalculateInventoryById(input.id);
         return { success: true };
       }),
   }),

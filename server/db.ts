@@ -2288,6 +2288,8 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
     const inTypes = ["purchase_in", "production_in", "return_in", "other_in"];
     const outTypes = ["production_out", "sales_out", "return_out", "other_out"];
     const qty = parseFloat(String(data.quantity)) || 0;
+    // 提前声明 existing，供后续重算使用
+    let existingInvId: number | null = null;
     if (qty > 0 && (inTypes.includes(data.type) || outTypes.includes(data.type))) {
       const isIn = inTypes.includes(data.type);
       // 查找现有库存记录（按仓库+产品+批次匹配）
@@ -2296,10 +2298,10 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
       if (data.batchNo) conditions.push(eq(inventory.batchNo, data.batchNo));
       const existing = await db.select().from(inventory).where(and(...conditions)).limit(1);
       if (existing.length > 0) {
+        existingInvId = existing[0].id;
         const currentQty = parseFloat(String(existing[0].quantity)) || 0;
-        const newQty = isIn ? currentQty + qty : currentQty - qty; // 出库允许负库存或由业务逻辑控制，此处直接加减
-        await db.update(inventory).set({ quantity: String(newQty) }).where(eq(inventory.id, existing[0].id));
-        // 更新流水的 beforeQty 和 afterQty
+        const newQty = isIn ? currentQty + qty : currentQty - qty;
+        // 先更新 beforeQty/afterQty 和 inventoryId，再重算
         await db.update(inventoryTransactions).set({
           beforeQty: String(currentQty),
           afterQty: String(newQty),
@@ -2316,11 +2318,15 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
           unit: data.unit,
           status: "qualified",
         });
+        const newInvId = newInvResult[0].insertId;
         await db.update(inventoryTransactions).set({
           beforeQty: "0",
           afterQty: String(qty),
-          inventoryId: newInvResult[0].insertId,
+          inventoryId: newInvId,
         }).where(eq(inventoryTransactions.id, txId));
+        // 重算新创建的库存记录
+        await recalculateInventoryById(newInvId);
+        return txId; // 早返回，避免重复重算
       } else {
         // 出库时如果没有库存记录（异常情况，但需处理），创建负库存记录
         const newInvResult = await db.insert(inventory).values({
@@ -2332,12 +2338,20 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
           unit: data.unit,
           status: "qualified",
         });
+        const newInvId = newInvResult[0].insertId;
         await db.update(inventoryTransactions).set({
           beforeQty: "0",
           afterQty: String(-qty),
-          inventoryId: newInvResult[0].insertId,
+          inventoryId: newInvId,
         }).where(eq(inventoryTransactions.id, txId));
+        // 重算新创建的库存记录
+        await recalculateInventoryById(newInvId);
+        return txId;
       }
+    }
+    // 已有库存记录的情况：在流水写入后重算（替代简单加减法）
+    if (existingInvId) {
+      await recalculateInventoryById(existingInvId);
     }
   } catch (e) {
     console.error("自动更新库存失败:", e);
@@ -2360,27 +2374,11 @@ export async function deleteInventoryTransaction(id: number, deletedBy?: number)
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // 1. 获取流水信息用于库存返还
+  // 1. 获取流水信息，记录 inventoryId 用于删除后重算
   const [tx] = await db.select().from(inventoryTransactions).where(eq(inventoryTransactions.id, id)).limit(1);
-  if (tx && tx.inventoryId) {
-    const qty = parseFloat(String(tx.quantity)) || 0;
-    const inTypes = ["purchase_in", "production_in", "return_in", "other_in"];
-    const outTypes = ["production_out", "sales_out", "return_out", "other_out"];
-    const isIn = inTypes.includes(tx.type);
-    const isOut = outTypes.includes(tx.type);
+  const inventoryIdToRecalc = tx?.inventoryId ?? null;
 
-    if (qty > 0 && (isIn || isOut)) {
-      const [inv] = await db.select().from(inventory).where(eq(inventory.id, tx.inventoryId)).limit(1);
-      if (inv) {
-        const currentQty = parseFloat(String(inv.quantity)) || 0;
-        // 如果是入库流水被删，库存减少；如果是出库流水被删，库存增加
-        const newQty = isIn ? currentQty - qty : currentQty + qty;
-        await db.update(inventory).set({ quantity: String(newQty) }).where(eq(inventory.id, inv.id));
-      }
-    }
-  }
-
-  // 2. 执行逻辑删除
+  // 2. 执行物理删除（存入回收站）
   await deleteSingleWithRecycle(db, {
     table: inventoryTransactions,
     idColumn: inventoryTransactions.id,
@@ -2389,6 +2387,11 @@ export async function deleteInventoryTransaction(id: number, deletedBy?: number)
     sourceTable: "inventory_transactions",
     deletedBy,
   });
+
+  // 3. 删除后重新从剩余流水汇总计算库存（彻底解决加减法不一致问题）
+  if (inventoryIdToRecalc) {
+    await recalculateInventoryById(inventoryIdToRecalc);
+  }
 }
 
 // ==================== 操作日志 CRUD ====================
@@ -5307,4 +5310,76 @@ export async function getUserEmailsByDepartment(departments: string[]): Promise<
   } catch {
     return [];
   }
+}
+
+// ==================== 库存重算（从流水账汇总） ====================
+const IN_TYPES = ["purchase_in", "production_in", "return_in", "other_in"];
+const OUT_TYPES = ["production_out", "sales_out", "return_out", "other_out"];
+
+/**
+ * 根据流水账重新计算指定库存记录的数量。
+ * 汇总该 inventoryId 下所有流水的净变动量，写回 inventory.quantity。
+ */
+export async function recalculateInventoryById(inventoryId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const txList = await db
+      .select()
+      .from(inventoryTransactions)
+      .where(eq(inventoryTransactions.inventoryId, inventoryId));
+
+    let netQty = 0;
+    for (const tx of txList) {
+      const qty = parseFloat(String(tx.quantity)) || 0;
+      if (IN_TYPES.includes(tx.type)) netQty += qty;
+      else if (OUT_TYPES.includes(tx.type)) netQty -= qty;
+    }
+
+    await db
+      .update(inventory)
+      .set({ quantity: String(netQty) })
+      .where(eq(inventory.id, inventoryId));
+  } catch (e) {
+    console.error("[recalculateInventoryById] 重算失败:", e);
+  }
+}
+
+/**
+ * 全量重算所有库存记录（管理员修复工具）。
+ */
+export async function recalculateAllInventory(): Promise<{ updated: number; errors: number }> {
+  const db = await getDb();
+  if (!db) return { updated: 0, errors: 0 };
+
+  const allInventory = await db.select().from(inventory);
+  let updated = 0;
+  let errors = 0;
+
+  for (const inv of allInventory) {
+    try {
+      const txList = await db
+        .select()
+        .from(inventoryTransactions)
+        .where(eq(inventoryTransactions.inventoryId, inv.id));
+
+      let netQty = 0;
+      for (const tx of txList) {
+        const qty = parseFloat(String(tx.quantity)) || 0;
+        if (IN_TYPES.includes(tx.type)) netQty += qty;
+        else if (OUT_TYPES.includes(tx.type)) netQty -= qty;
+      }
+
+      await db
+        .update(inventory)
+        .set({ quantity: String(netQty) })
+        .where(eq(inventory.id, inv.id));
+      updated++;
+    } catch (e) {
+      console.error(`[recalculateAllInventory] 库存ID=${inv.id} 重算失败:`, e);
+      errors++;
+    }
+  }
+
+  return { updated, errors };
 }
