@@ -111,6 +111,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Mail,
+  ScrollText,
 } from "lucide-react";
 import {
   Popover,
@@ -189,7 +190,6 @@ const menuConfig = [
       { icon: ArrowRightLeft, label: "生产流转单", path: "/production/routing-cards" },
       { icon: Flame, label: "委外灭菌单", path: "/production/sterilization" },
       { icon: Warehouse, label: "生产入库申请", path: "/production/warehouse-entry" },
-      { icon: FileText, label: "批记录查询", path: "/production/batch-records" },
       { icon: Layers, label: "BOM物料清单", path: "/production/bom" },
       { icon: GitBranch, label: "MRP物料计划", path: "/production/mrp" },
       { icon: Archive, label: "UDI档案", path: "/production/udi/archive" },
@@ -252,6 +252,14 @@ const menuConfig = [
     ],
   },
   {
+    id: "batch-management",
+    icon: ScrollText,
+    label: "批记录管理",
+    children: [
+      { icon: FileText, label: "批记录查询", path: "/production/batch-records" },
+    ],
+  },
+  {
     id: "settings",
     icon: Settings,
     label: "系统设置",
@@ -270,15 +278,15 @@ const menuConfig = [
 ];
 
 const DEPARTMENT_MENU_ACCESS: Record<string, string[]> = {
-  "管理部": ["admin", "settings"],
+  "管理部": ["admin", "settings", "batch-management"],
   "招商部": ["investment"],
-  "销售部": ["sales"],
+  "销售部": ["sales", "batch-management"],
   "研发部": ["rd"],
-  "生产部": ["production"],
-  "质量部": ["quality"],
+  "生产部": ["production", "batch-management"],
+  "质量部": ["quality", "batch-management"],
   "采购部": ["purchase"],
-  "仓库管理": ["warehouse"],
-  "财务部": ["finance"],
+  "仓库管理": ["warehouse", "batch-management"],
+  "财务部": ["finance", "batch-management"],
 };
 
 function parseDepartments(raw: unknown): string[] {
