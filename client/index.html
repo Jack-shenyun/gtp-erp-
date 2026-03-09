@@ -3,14 +3,27 @@
 
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>医疗器械ERP管理系统</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5, user-scalable=yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>神韵医疗ERP</title>
     <style>
-      /* 全局字体设置 - Times New Roman */
+      /* 全局字体设置 - 手机端优先使用系统中文字体 */
       * {
-        font-family: "Times New Roman", Times, serif !important;
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif !important;
+        -webkit-tap-highlight-color: transparent;
+        box-sizing: border-box;
+      }
+      /* 防止iOS Safari自动放大输入框 */
+      input, select, textarea {
+        font-size: 16px;
+      }
+      @media (min-width: 768px) {
+        input, select, textarea {
+          font-size: inherit;
+        }
       }
     </style>
   </head>

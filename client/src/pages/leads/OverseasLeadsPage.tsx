@@ -366,8 +366,8 @@ WhatsApp: +86 138 XXXX XXXX`);
         </div>
       </div>
 
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-5 gap-3 px-4 py-3 flex-shrink-0">
+      {/* 统计卡片 - 手机端横向滚动 */}
+      <div className="flex gap-2 px-3 py-2.5 flex-shrink-0 overflow-x-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
         {[
           { label: "总线索", value: stats.total, color: "text-gray-700", bg: "bg-white" },
           { label: "新线索", value: stats.new, color: "text-blue-600", bg: "bg-blue-50" },
@@ -375,15 +375,15 @@ WhatsApp: +86 138 XXXX XXXX`);
           { label: "已成交", value: stats.won, color: "text-green-600", bg: "bg-green-50" },
           { label: "A级线索", value: stats.gradeA, color: "text-red-600", bg: "bg-red-50" },
         ].map((s) => (
-          <div key={s.label} className={`${s.bg} rounded-lg px-4 py-3 border border-gray-100`}>
-            <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-            <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
+          <div key={s.label} className={`${s.bg} rounded-lg px-3 py-2 border border-gray-100 flex-shrink-0 min-w-[72px] text-center`}>
+            <div className={`text-xl font-bold ${s.color}`}>{s.value}</div>
+            <div className="text-[11px] text-gray-500 mt-0.5">{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* 标签页 */}
-      <div className="flex gap-1 px-4 flex-shrink-0">
+      <div className="flex gap-1 px-3 flex-shrink-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
         {[
           { key: "leads", label: "线索库", icon: Users },
           { key: "search", label: "搜索发现", icon: Search },

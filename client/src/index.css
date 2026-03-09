@@ -121,11 +121,9 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    font-family: "Times New Roman", Times, serif;
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "Times New Roman", Times, serif;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -268,333 +266,386 @@
 }
 
 /* ============================================================
-   全局移动端适配规范 v3（统一规范，仅影响手机端，电脑端完全不变）
-   ============================================================
-
-   规范说明：
-   - 字体：标题 1rem，正文 0.75rem，辅助文字 0.65rem
-   - 间距：模块间 0.5rem，内边距 0.5rem
-   - 卡片：统计卡片一排显示，内边距最小化
-   - 筛选器：横向一排
-   - 对话框：全屏展示，内容可滚动，底部按钮固定
-   - 表格：横向滚动，字体 0.7rem
-   - 侧边栏：220px 宽，紧凑菜单
+   全局移动端适配 v4 — 系统性优化
+   适用范围：max-width: 768px（手机端）
+   原则：
+   1. 内容优先，减少空白
+   2. 触摸友好，按钮最小 44px 高度
+   3. 表格横向滚动，不破坏数据完整性
+   4. 弹窗全屏，底部按钮固定
+   5. 导航侧边栏抽屉式，不占内容区
    ============================================================ */
 
 @media (max-width: 768px) {
 
   /* ================================================================
-     1. 全局间距与内边距
+     1. 基础间距压缩
      ================================================================ */
-  .space-y-6 > * + * { margin-top: 0.5rem !important; }
-  .space-y-4 > * + * { margin-top: 0.4rem !important; }
-  .gap-6 { gap: 0.5rem !important; }
-  .gap-4 { gap: 0.4rem !important; }
-  .gap-3 { gap: 0.3rem !important; }
-
   main, [data-sidebar-inset] {
     padding: 0.5rem !important;
   }
 
-  .p-6 { padding: 0.5rem !important; }
+  .p-6 { padding: 0.75rem !important; }
+  .p-5 { padding: 0.6rem !important; }
   .p-4 { padding: 0.5rem !important; }
   .p-3 { padding: 0.4rem !important; }
-  .px-6, .px-4 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
-  .py-6 { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+
+  .px-6 { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+  .px-4 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+
+  .py-6 { padding-top: 0.6rem !important; padding-bottom: 0.6rem !important; }
+  .py-5 { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
   .py-4 { padding-top: 0.4rem !important; padding-bottom: 0.4rem !important; }
-  .py-3 { padding-top: 0.3rem !important; padding-bottom: 0.3rem !important; }
+
+  .space-y-6 > * + * { margin-top: 0.75rem !important; }
+  .space-y-4 > * + * { margin-top: 0.5rem !important; }
+  .space-y-3 > * + * { margin-top: 0.4rem !important; }
+
+  .gap-6 { gap: 0.5rem !important; }
+  .gap-4 { gap: 0.4rem !important; }
+  .gap-3 { gap: 0.35rem !important; }
 
   /* ================================================================
-     2. 页面标题
+     2. 字体层级（清晰可读，不过小）
      ================================================================ */
-  h1, .text-2xl { font-size: 1rem !important; line-height: 1.3 !important; }
-  h2, .text-xl { font-size: 0.9rem !important; }
-  h3, .text-lg { font-size: 0.85rem !important; }
-  .text-muted-foreground { font-size: 0.7rem !important; }
-
-  /* 标题+按钮行自动换行 */
-  .flex.items-center.justify-between {
-    flex-wrap: wrap;
-    gap: 0.3rem;
-  }
+  h1, .text-3xl { font-size: 1.1rem !important; font-weight: 700 !important; line-height: 1.3 !important; }
+  h2, .text-2xl { font-size: 1rem !important; font-weight: 600 !important; line-height: 1.3 !important; }
+  h3, .text-xl { font-size: 0.9rem !important; font-weight: 600 !important; }
+  .text-lg { font-size: 0.85rem !important; }
+  .text-base { font-size: 0.82rem !important; }
+  .text-sm { font-size: 0.78rem !important; }
+  .text-xs { font-size: 0.7rem !important; }
+  .text-muted-foreground { font-size: 0.72rem !important; }
 
   /* ================================================================
-     3. 统计卡片：一排显示
+     3. 统计卡片：紧凑展示
      ================================================================ */
-  .grid { gap: 0.3rem !important; }
-
-  .grid-cols-2,
-  .grid-cols-3,
-  .grid-cols-4,
-  .md\:grid-cols-3,
-  .md\:grid-cols-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  }
-  .grid-cols-3:not(.md\:grid-cols-4) {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  }
-
   .erp-stat-card {
-    padding: 0.3rem !important;
+    padding: 0.5rem 0.6rem !important;
+    border-radius: 0.5rem !important;
   }
   .erp-stat-value,
   .text-2xl.font-bold,
-  .text-xl.font-bold {
-    font-size: 0.95rem !important;
+  .text-3xl.font-bold {
+    font-size: 1.1rem !important;
     line-height: 1.2 !important;
   }
   .erp-stat-label {
-    font-size: 0.6rem !important;
-    margin-top: 0 !important;
-  }
-  .rounded-lg.border .text-sm {
-    font-size: 0.7rem !important;
+    font-size: 0.65rem !important;
+    margin-top: 0.1rem !important;
   }
 
   /* ================================================================
-     4. 筛选器：横向一排
+     4. 网格布局：手机端自适应列数
      ================================================================ */
-  .space-y-4 > .flex.flex-col {
-    flex-direction: row !important;
-    flex-wrap: wrap;
-    gap: 0.3rem !important;
+  /* 统计卡片区域：强制2列 */
+  .grid.grid-cols-4,
+  .grid.md\:grid-cols-4,
+  .grid.lg\:grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
-  .space-y-4 > .flex.flex-col > * {
+  .grid.grid-cols-3,
+  .grid.md\:grid-cols-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .grid.grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  /* 通用grid间距 */
+  .grid { gap: 0.4rem !important; }
+
+  /* ================================================================
+     5. 页面标题行：标题+按钮自动换行
+     ================================================================ */
+  .flex.items-center.justify-between {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  /* 标题区域 */
+  .flex.items-center.justify-between > div:first-child,
+  .flex.items-center.justify-between > h1,
+  .flex.items-center.justify-between > h2 {
     flex: 1;
     min-width: 0;
   }
-  select {
-    font-size: 0.75rem !important;
-    padding: 0.25rem 0.35rem !important;
-    height: auto !important;
-    min-height: 1.8rem !important;
+  /* 按钮组 */
+  .flex.items-center.justify-between > div:last-child,
+  .flex.items-center.justify-between > .flex {
+    flex-shrink: 0;
   }
 
   /* ================================================================
-     5. 按钮：紧凑、不截断、横向可滚动
+     6. 按钮：触摸友好（最小高度 36px），文字不截断
      ================================================================ */
-  .flex.items-center.gap-2,
-  .flex.items-center.gap-1,
-  .flex.flex-wrap.gap-2 {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .flex.items-center.gap-2::-webkit-scrollbar,
-  .flex.items-center.gap-1::-webkit-scrollbar,
-  .flex.flex-wrap.gap-2::-webkit-scrollbar {
-    display: none;
-  }
-
-  button {
-    font-size: 0.75rem !important;
-    padding: 0.25rem 0.45rem !important;
+  button:not([data-sidebar-trigger]):not([role="checkbox"]):not([role="switch"]) {
+    font-size: 0.78rem !important;
+    min-height: 36px;
+    padding-top: 0.3rem !important;
+    padding-bottom: 0.3rem !important;
     white-space: nowrap;
   }
   button svg {
     width: 14px !important;
     height: 14px !important;
+    flex-shrink: 0;
+  }
+  /* 图标按钮（纯图标，无文字）保持正方形 */
+  button.h-8.w-8,
+  button.h-9.w-9,
+  button.h-10.w-10 {
+    min-height: unset !important;
+    padding: 0 !important;
   }
 
   /* ================================================================
-     6. 表格：横向滚动，统一字体
+     7. 筛选器工具栏：横向滚动
      ================================================================ */
-  .rounded-lg table, .border table, table {
+  .flex.items-center.gap-2,
+  .flex.items-center.gap-3,
+  .flex.flex-wrap.gap-2 {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .flex.items-center.gap-2::-webkit-scrollbar,
+  .flex.items-center.gap-3::-webkit-scrollbar,
+  .flex.flex-wrap.gap-2::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ================================================================
+     8. 表格：横向滚动，字体可读
+     ================================================================ */
+  .overflow-x-auto table,
+  .rounded-lg table,
+  .border table,
+  table {
     display: block;
     overflow-x: auto;
     white-space: nowrap;
     -webkit-overflow-scrolling: touch;
+    width: 100%;
   }
-  th, td {
-    font-size: 0.7rem !important;
-    padding: 0.3rem 0.4rem !important;
+  th {
+    font-size: 0.72rem !important;
+    padding: 0.4rem 0.5rem !important;
+    font-weight: 600 !important;
     white-space: nowrap;
   }
-  th { font-weight: 600 !important; }
+  td {
+    font-size: 0.72rem !important;
+    padding: 0.4rem 0.5rem !important;
+    white-space: nowrap;
+  }
 
   /* ================================================================
-     7. 对话框 / 详情弹窗：全屏展示，内容可滚动，底部按钮固定
+     9. 表单输入框：防止iOS自动放大（保持16px），标签清晰
+     ================================================================ */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+    min-height: 40px;
+    border-radius: 0.4rem !important;
+  }
+  label {
+    font-size: 0.78rem !important;
+    font-weight: 500 !important;
+  }
+
+  /* ================================================================
+     10. Tab 标签页：横向滚动，不换行
+     ================================================================ */
+  [role="tablist"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
+    gap: 0 !important;
+  }
+  [role="tablist"]::-webkit-scrollbar { display: none; }
+  [role="tablist"] [role="tab"] {
+    font-size: 0.75rem !important;
+    padding: 0.4rem 0.6rem !important;
+    white-space: nowrap;
+    min-height: 36px;
+    flex-shrink: 0;
+  }
+
+  /* ================================================================
+     11. 弹窗/对话框：全屏展示，内容可滚动，底部按钮固定
      ================================================================ */
   [role="dialog"] {
     position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
+    inset: 0 !important;
     max-width: 100vw !important;
-    max-height: 100vh !important;
+    max-height: 100dvh !important;
     width: 100vw !important;
-    height: 100vh !important;
+    height: 100dvh !important;
     margin: 0 !important;
-    padding: 0 !important;
     border-radius: 0 !important;
     transform: none !important;
     display: flex !important;
     flex-direction: column !important;
+    overflow: hidden !important;
   }
 
-  /* 对话框头部（标题）固定 */
-  [role="dialog"] > div:first-child,
-  [role="dialog"] > header {
-    flex-shrink: 0;
-    padding: 0.6rem 0.75rem !important;
-    border-bottom: 1px solid #e5e7eb;
+  /* 弹窗标题区固定 */
+  [role="dialog"] > *:first-child {
+    flex-shrink: 0 !important;
+    padding: 0.75rem 1rem !important;
+    border-bottom: 1px solid var(--border);
   }
 
-  /* 对话框中间内容区域：可滚动 */
-  [role="dialog"] .space-y-4,
-  [role="dialog"] .space-y-3,
-  [role="dialog"] .py-4,
-  [role="dialog"] > div:nth-child(2) {
+  /* 弹窗内容区可滚动 */
+  [role="dialog"] > *:nth-child(2) {
     flex: 1 !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
-    padding: 0.5rem 0.75rem !important;
+    padding: 0.75rem 1rem !important;
     max-height: none !important;
   }
 
-  /* 对话框底部按钮固定 */
-  [role="dialog"] > div:last-child {
-    flex-shrink: 0;
-    padding: 0.5rem 0.75rem !important;
-    border-top: 1px solid #e5e7eb;
-    background: white;
+  /* 弹窗底部按钮固定 */
+  [role="dialog"] > *:last-child:not(:first-child) {
+    flex-shrink: 0 !important;
+    padding: 0.6rem 1rem !important;
+    border-top: 1px solid var(--border);
+    background: var(--card);
   }
 
-  /* 对话框内表单单列 */
-  [role="dialog"] .grid.grid-cols-2 {
-    grid-template-columns: 1fr !important;
-  }
-  .grid.grid-cols-2 {
+  /* 弹窗内表单：单列 */
+  [role="dialog"] .grid.grid-cols-2,
+  [role="dialog"] .grid.grid-cols-3 {
     grid-template-columns: 1fr !important;
   }
 
-  /* 对话框内表单字体 */
-  [role="dialog"] input,
-  [role="dialog"] select,
-  [role="dialog"] textarea {
-    font-size: 0.8rem !important;
-  }
-  [role="dialog"] label {
-    font-size: 0.75rem !important;
-  }
+  /* 弹窗内字体 */
   [role="dialog"] h2,
-  [role="dialog"] h3,
-  [role="dialog"] .text-lg {
-    font-size: 0.9rem !important;
-  }
-
-  /* 详情弹窗内的字段列表（label: value 格式） */
-  [role="dialog"] .flex.justify-between,
-  [role="dialog"] .flex.items-center.justify-between {
-    font-size: 0.75rem !important;
-    padding: 0.25rem 0 !important;
-  }
-
-  /* 覆盖弹窗背景遮罩 */
-  [data-state="open"][role="dialog"] ~ div,
-  [data-radix-portal] > div:first-child {
-    background: rgba(0, 0, 0, 0.4) !important;
+  [role="dialog"] .text-lg.font-semibold {
+    font-size: 1rem !important;
+    font-weight: 600 !important;
   }
 
   /* ================================================================
-     8. 表单输入框
+     12. Badge 标签：紧凑但可读
      ================================================================ */
-  input, select, textarea {
-    font-size: 0.8rem !important;
-  }
-  label {
-    font-size: 0.75rem !important;
-  }
-  input[placeholder] {
-    width: 100% !important;
-  }
-
-  /* ================================================================
-     9. Tab 标签
-     ================================================================ */
-  [role="tablist"] {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  [role="tablist"]::-webkit-scrollbar { display: none; }
-  [role="tablist"] [role="tab"] {
-    font-size: 0.7rem !important;
-    padding: 0.25rem 0.45rem !important;
+  .inline-flex.items-center.rounded-full,
+  .inline-flex.items-center.rounded-md {
+    font-size: 0.65rem !important;
+    padding: 0.15rem 0.4rem !important;
     white-space: nowrap;
   }
 
   /* ================================================================
-     10. Badge
-     ================================================================ */
-  .inline-flex.items-center.rounded-full {
-    font-size: 0.6rem !important;
-    padding: 0.1rem 0.35rem !important;
-    white-space: nowrap;
-  }
-
-  /* ================================================================
-     11. 侧边栏
+     13. 侧边栏：抽屉式，宽度适中
      ================================================================ */
   [data-sidebar] {
-    width: 220px !important;
-    max-width: 70vw !important;
-  }
-  [data-sidebar] [data-sidebar-content] {
-    padding: 0.2rem !important;
+    width: 240px !important;
+    max-width: 80vw !important;
   }
   [data-sidebar] button,
   [data-sidebar] a {
-    font-size: 0.78rem !important;
-    padding: 0.3rem 0.45rem !important;
-    min-height: unset !important;
+    font-size: 0.82rem !important;
+    padding: 0.45rem 0.6rem !important;
+    min-height: 40px !important;
   }
   [data-sidebar] button svg,
   [data-sidebar] a svg {
-    width: 15px !important;
-    height: 15px !important;
+    width: 16px !important;
+    height: 16px !important;
+    flex-shrink: 0;
   }
   [data-sidebar] [data-sidebar-menu-sub] button,
   [data-sidebar] [data-sidebar-menu-sub] a {
-    font-size: 0.72rem !important;
-    padding: 0.2rem 0.4rem 0.2rem 1.4rem !important;
+    font-size: 0.78rem !important;
+    padding: 0.35rem 0.5rem 0.35rem 1.5rem !important;
+    min-height: 36px !important;
   }
   [data-sidebar] [data-sidebar-header] {
-    padding: 0.4rem !important;
-  }
-  [data-sidebar] [data-sidebar-header] img {
-    height: 1.4rem !important;
+    padding: 0.5rem 0.6rem !important;
   }
   [data-sidebar] [data-sidebar-footer] {
-    padding: 0.35rem !important;
+    padding: 0.4rem 0.5rem !important;
   }
 
   /* ================================================================
-     12. 其他组件
+     14. 卡片圆角统一
      ================================================================ */
-  .rounded-xl { border-radius: 0.5rem !important; }
-  .rounded-lg.border { border-radius: 0.4rem; }
+  .rounded-xl { border-radius: 0.6rem !important; }
+  .rounded-lg { border-radius: 0.5rem !important; }
+
+  /* ================================================================
+     15. Select 下拉框
+     ================================================================ */
+  select {
+    font-size: 16px !important;
+    padding: 0.4rem 0.5rem !important;
+    min-height: 40px !important;
+  }
+
+  /* ================================================================
+     16. 分页器
+     ================================================================ */
+  nav[aria-label="pagination"],
+  .pagination {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    justify-content: center;
+  }
+  nav[aria-label="pagination"] button,
+  .pagination button {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0.2rem 0.4rem !important;
+    font-size: 0.72rem !important;
+  }
 }
 
 /* ================================================================
    超小屏幕（< 400px）进一步压缩
    ================================================================ */
 @media (max-width: 400px) {
-  h1, .text-2xl { font-size: 0.9rem !important; }
-  th, td {
-    font-size: 0.6rem !important;
-    padding: 0.2rem 0.3rem !important;
-  }
-  button {
-    font-size: 0.65rem !important;
-    padding: 0.2rem 0.35rem !important;
-  }
+  h1, .text-2xl { font-size: 0.95rem !important; }
+  h2, .text-xl { font-size: 0.88rem !important; }
+
   .erp-stat-value, .text-2xl.font-bold {
-    font-size: 0.85rem !important;
+    font-size: 0.95rem !important;
   }
   .erp-stat-label {
-    font-size: 0.55rem !important;
+    font-size: 0.6rem !important;
+  }
+
+  th, td {
+    font-size: 0.65rem !important;
+    padding: 0.3rem 0.4rem !important;
+  }
+
+  [role="tablist"] [role="tab"] {
+    font-size: 0.68rem !important;
+    padding: 0.3rem 0.5rem !important;
+  }
+
+  .inline-flex.items-center.rounded-full,
+  .inline-flex.items-center.rounded-md {
+    font-size: 0.6rem !important;
+    padding: 0.1rem 0.3rem !important;
+  }
+}
+
+/* ================================================================
+   安全区域适配（iPhone 刘海/底部横条）
+   ================================================================ */
+@supports (padding: max(0px)) {
+  @media (max-width: 768px) {
+    body {
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+    header {
+      padding-top: env(safe-area-inset-top);
+    }
   }
 }

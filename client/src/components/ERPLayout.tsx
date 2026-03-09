@@ -920,7 +920,7 @@ function ERPLayoutContent({
       </div>
 
       <SidebarInset>
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-muted/30 min-h-[calc(100vh-3rem)]">
+        <main className="flex-1 overflow-y-auto p-3 md:p-6 bg-muted/30 min-h-[calc(100vh-3rem)]">
           {children}
         </main>
       </SidebarInset>
