@@ -5,12 +5,14 @@ import {
   ClipboardCheck,
   Factory,
   FlaskConical,
+  FolderOpen,
   Globe,
   Handshake,
   Mail,
   Megaphone,
   NotebookText,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   Truck,
   Warehouse,
@@ -40,6 +42,8 @@ export const WORKBENCH_APP_ENTRIES: readonly WorkbenchAppEntry[] = [
   { id: "mail-collaboration", menuId: "common", label: "邮件协同", path: "/mail", icon: Mail, color: "from-blue-500 to-cyan-600" },
   { id: "website-management", menuId: "common", label: "网站管理", path: "/website", icon: Globe, color: "from-indigo-500 to-blue-700" },
   { id: "lead-marketing", menuId: "common", label: "获客营销", path: "/leads/overseas", icon: Megaphone, color: "from-pink-500 to-rose-600" },
+  { id: "ra", menuId: "common", label: "法规事务部", path: "/ra/dashboard", icon: ShieldCheck, color: "from-purple-500 to-violet-600" },
+  { id: "file-manager", menuId: "common", label: "知识库", path: "/admin/file-manager", icon: FolderOpen, color: "from-amber-500 to-orange-600" },
 ] as const;
 
 export const WORKBENCH_APP_OPTIONS = WORKBENCH_APP_ENTRIES.map((item) => ({

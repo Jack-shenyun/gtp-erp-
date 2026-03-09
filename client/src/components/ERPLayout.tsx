@@ -146,8 +146,7 @@ const menuConfig = [
     icon: Building2,
     label: "管理部",
     children: [
-      { icon: FileText, label: "知识库", path: "/admin/documents" },
-      { icon: HardDrive, label: "文件管理", path: "/admin/file-manager" },
+      { icon: FileText, label: "文件管理", path: "/admin/documents" },
       { icon: Users, label: "人事管理", path: "/admin/personnel" },
       { icon: GraduationCap, label: "培训管理", path: "/admin/training" },
       { icon: FileSearch, label: "内审管理", path: "/admin/audit" },
@@ -222,16 +221,7 @@ const menuConfig = [
       { icon: FileCheck, label: "检验要求", path: "/quality/inspection-requirements" },
     ],
   },
-  {
-    id: "ra",
-    icon: ShieldCheck,
-    label: "法规事务部",
-    children: [
-      { icon: ShieldCheck, label: "法规仪表盘", path: "/ra/dashboard" },
-      { icon: FileText, label: "申报项目", path: "/ra/projects" },
-      { icon: BookOpen, label: "文件模板库", path: "/ra/templates" },
-    ],
-  },
+
   {
     id: "purchase",
     icon: Truck,
@@ -318,7 +308,6 @@ const DEPARTMENT_MENU_ACCESS: Record<string, string[]> = {
   "研发部": ["rd"],
   "生产部": ["production", "batch-management"],
   "质量部": ["quality", "batch-management"],
-  "法规事务部": ["ra"],
   "采购部": ["purchase"],
   "仓库管理": ["warehouse", "batch-management"],
   "财务部": ["finance", "batch-management"],
