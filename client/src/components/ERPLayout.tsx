@@ -121,6 +121,8 @@ import {
   MessageCircle,
   MoreHorizontal,
   ShieldCheck,
+  Network,
+  ExternalLink,
 } from "lucide-react";
 import {
   Popover,
@@ -179,11 +181,16 @@ const menuConfig = [
     ],
   },
   {
+    id: "products",
+    icon: Package,
+    label: "产品管理",
+    path: "/rd/products",
+  },
+  {
     id: "rd",
     icon: FlaskConical,
     label: "研发部",
     children: [
-      { icon: Package, label: "产品管理", path: "/rd/products" },
       { icon: FolderKanban, label: "项目管理", path: "/rd/projects" },
     ],
   },
@@ -305,7 +312,7 @@ const DEPARTMENT_MENU_ACCESS: Record<string, string[]> = {
   "管理部": ["admin", "settings", "batch-management"],
   "招商部": ["investment"],
   "销售部": ["sales", "batch-management"],
-  "研发部": ["rd"],
+  "研发部": ["products", "rd"],
   "生产部": ["production", "batch-management"],
   "质量部": ["quality", "batch-management"],
   "采购部": ["purchase"],
@@ -417,6 +424,25 @@ function ERPLayoutContent({
     { tab: "todo", limit: 5 },
     { refetchInterval: 60_000 }
   );
+
+  // 协同公司
+  const { data: myCompanies = [] } = trpc.companies.myCompanies.useQuery();
+  const [activeCompanyId, setActiveCompanyId] = useState<number | null>(() => {
+    const saved = localStorage.getItem("erp-active-company-id");
+    return saved ? Number(saved) : null;
+  });
+  const activeCompany = (myCompanies as any[]).find((c: any) => c.id === activeCompanyId) ?? null;
+
+  const handleSwitchCompany = (companyId: number | null) => {
+    setActiveCompanyId(companyId);
+    if (companyId === null) {
+      localStorage.removeItem("erp-active-company-id");
+    } else {
+      localStorage.setItem("erp-active-company-id", String(companyId));
+    }
+    // 刷新页面以确保所有组件重新根据新公司 ID 初始化
+    window.location.href = "/";
+  };
   const todoItems: any[] = Array.isArray(todoData)
     ? todoData
     : Array.isArray((todoData as any)?.items)
@@ -436,16 +462,31 @@ function ERPLayoutContent({
     return ids;
   }, [userRole, userDepartments]);
 
+  // 协同公司可见菜单 ID
+  // 协同公司：采购部(purchase)、销售部(sales)、财务部(finance)、仓库管理(warehouse)、产品管理(products)、用户设置(settings子项)
+  const COMPANY_MENU_IDS = new Set(["dashboard", "purchase", "sales", "finance", "warehouse", "products", "settings"]);
+
   const visibleMenuConfig = useMemo(() => {
+    // 检查是否是协同公司 (id 1 或 2，或者 type 不是 main)
+    const isPartnerCompany = activeCompany && activeCompany.id !== 3;
+    const baseIds = isPartnerCompany ? COMPANY_MENU_IDS : allowedMenuIds;
+
     return menuConfig
-      .filter((item) => allowedMenuIds.has(item.id))
+      .filter((item) => baseIds.has(item.id))
       .map((item) => {
         if (!item.children) return item;
-        const children = item.children.filter((child: any) => !child.adminOnly || userRole === "admin");
+        
+        let children = item.children.filter((child: any) => !child.adminOnly || userRole === "admin");
+        
+        // 如果是协同公司，过滤系统设置下的子项，只保留用户设置
+        if (isPartnerCompany && item.id === "settings") {
+          children = children.filter((child: any) => child.label === "用户设置");
+        }
+        
         return { ...item, children };
       })
       .filter((item) => !item.children || item.children.length > 0);
-  }, [allowedMenuIds, userRole]);
+  }, [allowedMenuIds, userRole, activeCompany]);
 
   const currentNavMeta = useMemo(() => {
     for (const menu of visibleMenuConfig) {
@@ -589,6 +630,57 @@ function ERPLayoutContent({
             <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
             <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
           </div>
+          {/* 协同公司切换器 */}
+          {(myCompanies as any[]).length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={`flex items-center gap-1.5 h-7 rounded-full px-2.5 text-xs font-medium transition-colors border ${
+                    activeCompany
+                      ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                      : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  <Network className="h-3 w-3" />
+                  <span className="hidden sm:block max-w-[100px] truncate">
+                    {activeCompany ? activeCompany.shortName || activeCompany.name : "神韵主公司"}
+                  </span>
+                  <ChevronRight className="h-3 w-3 rotate-90" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56 rounded-xl shadow-xl border-0 p-1">
+                <div className="px-3 py-1.5 text-xs text-muted-foreground font-medium">切换公司</div>
+                <DropdownMenuItem
+                  onClick={() => handleSwitchCompany(null)}
+                  className={`rounded-lg text-sm cursor-pointer gap-2 ${
+                    !activeCompany ? "bg-blue-50 text-blue-700" : ""
+                  }`}
+                >
+                  <div className="h-5 w-5 rounded bg-gradient-to-br from-teal-500 to-blue-600 flex items-center justify-center">
+                    <span className="text-[9px] text-white font-bold">神</span>
+                  </div>
+                  神韵医疗（主公司）
+                  {!activeCompany && <CheckCircle2 className="h-3.5 w-3.5 ml-auto text-blue-600" />}
+                </DropdownMenuItem>
+                {(myCompanies as any[]).map((company: any) => (
+                  <DropdownMenuItem
+                    key={company.id}
+                    onClick={() => handleSwitchCompany(company.id)}
+                    className={`rounded-lg text-sm cursor-pointer gap-2 ${
+                      activeCompanyId === company.id ? "bg-blue-50 text-blue-700" : ""
+                    }`}
+                  >
+                    <div className="h-5 w-5 rounded flex items-center justify-center" style={{ background: company.color || "#6366f1" }}>
+                      <span className="text-[9px] text-white font-bold">{(company.shortName || company.name).charAt(0)}</span>
+                    </div>
+                    <span className="truncate flex-1">{company.name}</span>
+                    {activeCompanyId === company.id && <CheckCircle2 className="h-3.5 w-3.5 ml-auto text-blue-600" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
         <div className="flex items-center gap-1">
           {/* 桌面端展示所有快捷入口 */}

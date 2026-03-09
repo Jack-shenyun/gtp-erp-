@@ -2,13 +2,14 @@ import { createConnection } from 'mysql2/promise';
 import { config } from 'dotenv';
 config();
 
-const url = process.env.DATABASE_URL;
-const conn = await createConnection(url);
-const [rows] = await conn.query('DESCRIBE production_records');
-const cols = rows.map(r => r.Field);
-console.log('Existing columns:\n', cols.join('\n'));
+const conn = await createConnection(process.env.DATABASE_URL);
 
-const needed = ['workstationName', 'workstationId', 'recordDate', 'scrapQty', 'temperatureLimit', 'humidityLimit', 'materialSpec', 'materialBatchNo', 'usedQty', 'usedUnit', 'cleanedBy', 'checkedBy', 'cleanResult', 'firstPieceResult', 'firstPieceInspector'];
-const missing = needed.filter(c => !cols.includes(c));
-console.log('\nMissing:', missing.join(', ') || 'none');
-conn.end();
+const [companies] = await conn.query('SELECT * FROM companies');
+console.log('=== Companies ===');
+console.log(JSON.stringify(companies, null, 2));
+
+const [users] = await conn.query('SELECT id, name, openId, role, department, companyId FROM users LIMIT 20');
+console.log('\n=== Users ===');
+console.log(JSON.stringify(users, null, 2));
+
+await conn.end();

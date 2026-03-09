@@ -58,7 +58,7 @@ export function useAuth(options?: UseAuthOptions) {
             }
           })()
         : null;
-    const resolvedUser = isLocalAuthMode ? localAuthUser : meQuery.data ?? null;
+    const resolvedUser = meQuery.data ?? localAuthUser ?? null;
     localStorage.setItem("manus-runtime-user-info", JSON.stringify(resolvedUser));
     return {
       user: resolvedUser,

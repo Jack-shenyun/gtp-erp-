@@ -22,6 +22,7 @@ export const users = mysqlTable("users", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
   avatarUrl: text("avatarUrl"),
+  companyId: int("companyId"), // 所属公司
 });
 
 export type User = typeof users.$inferSelect;
@@ -1943,3 +1944,26 @@ export const raProjects = mysqlTable("ra_projects", {
 
 export type RaProject = typeof raProjects.$inferSelect;
 export type InsertRaProject = typeof raProjects.$inferInsert;
+
+// ==================== 协同公司模块 ====================
+export const companies = mysqlTable("companies", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  shortName: varchar("shortName", { length: 50 }),
+  type: mysqlEnum("type", ["sales", "supplier", "other"]).notNull().default("sales"),
+  modules: text("modules"),
+  description: text("description"),
+  color: varchar("color", { length: 20 }),
+  status: mysqlEnum("status", ["active", "inactive"]).notNull().default("active"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Company = typeof companies.$inferSelect;
+
+export const companyUserAccess = mysqlTable("company_user_access", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  userId: int("userId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CompanyUserAccess = typeof companyUserAccess.$inferSelect;

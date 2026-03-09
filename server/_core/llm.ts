@@ -212,13 +212,18 @@ const normalizeToolChoice = (
 const resolveApiUrl = () =>
   ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+    : "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+
+const ZHIPU_API_KEY = "b2427e1eaec24e1dbfc6b08c82e6d693.zc0XAEJ1g7iStgYY";
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
-  }
+  // 智谱 API Key 已内置，无需额外配置
 };
+
+const resolveApiKey = () =>
+  ENV.forgeApiKey && ENV.forgeApiKey.trim().length > 0
+    ? ENV.forgeApiKey
+    : ZHIPU_API_KEY;
 
 const normalizeResponseFormat = ({
   responseFormat,
@@ -280,7 +285,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: "glm-4-flash",
     messages: messages.map(normalizeMessage),
   };
 
@@ -296,10 +301,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
-  }
+  payload.max_tokens = 8192;
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
@@ -316,7 +318,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${resolveApiKey()}`,
     },
     body: JSON.stringify(payload),
   });

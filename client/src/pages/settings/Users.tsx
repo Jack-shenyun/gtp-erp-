@@ -51,6 +51,7 @@ import {
   MessageCircle,
   CheckCircle2,
   XCircle,
+  Network,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
@@ -178,6 +179,9 @@ export default function UsersPage() {
   };
   const isMutating = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
+  // 协同公司列表
+  const { data: allCompanies = [] } = trpc.companies.list.useQuery();
+
   const [formData, setFormData] = useState({
     username: "",
     name: "",
@@ -186,6 +190,7 @@ export default function UsersPage() {
     department: "",
     role: "user",
     visibleApps: [] as string[],
+    allowedCompanies: [] as number[],
     status: "active",
     wxAccount: "",
     wxOpenid: "",
@@ -222,6 +227,7 @@ export default function UsersPage() {
       department: "",
       role: "user",
       visibleApps: [],
+      allowedCompanies: [],
       status: "active",
       wxAccount: "",
       wxOpenid: "",
@@ -244,6 +250,7 @@ export default function UsersPage() {
       department: user.department,
       role: user.role,
       visibleApps: user.visibleApps ?? [],
+      allowedCompanies: user.allowedCompanies ?? [],
       status: user.status,
       wxAccount: user.wxAccount || "",
       wxOpenid: user.wxOpenid || "",
@@ -350,6 +357,7 @@ export default function UsersPage() {
         department: formData.department || undefined,
         role: formData.role as "admin" | "user",
         visibleApps: formData.visibleApps,
+        allowedCompanies: formData.allowedCompanies,
         ...wxPayload,
       });
       if (currentUser && Number((currentUser as any).id) === Number(editingUser.id)) {
@@ -388,6 +396,7 @@ export default function UsersPage() {
         department: formData.department || undefined,
         role: formData.role as "admin" | "user",
         visibleApps: formData.visibleApps,
+        allowedCompanies: formData.allowedCompanies,
         ...wxPayload,
       });
       logOperation({
@@ -407,6 +416,13 @@ export default function UsersPage() {
       ? Array.from(new Set([...selectedDepartments, department]))
       : selectedDepartments.filter((d) => d !== department);
     setFormData({ ...formData, department: next.join("，") });
+  };
+
+  const toggleAllowedCompany = (companyId: number, checked: boolean) => {
+    const next = checked
+      ? Array.from(new Set([...formData.allowedCompanies, companyId]))
+      : formData.allowedCompanies.filter((id) => id !== companyId);
+    setFormData({ ...formData, allowedCompanies: next });
   };
 
   const toggleVisibleApp = (appId: string, checked: boolean) => {
@@ -778,6 +794,43 @@ export default function UsersPage() {
                 留空时，首页按用户所属部门自动显示；勾选后按这里的应用配置显示。
               </p>
             </div>
+
+            {/* 协同公司访问权限 */}
+            {(allCompanies as any[]).length > 0 && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Network className="h-4 w-4 text-indigo-500" />
+                    <Label>协同公司访问权限</Label>
+                  </div>
+                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                    {(allCompanies as any[]).map((company: any) => (
+                      <label
+                        key={company.id}
+                        className="flex items-center gap-3 rounded-lg border border-transparent bg-white px-3 py-2.5 shadow-sm cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={formData.allowedCompanies.includes(company.id)}
+                          onCheckedChange={(checked) => toggleAllowedCompany(company.id, Boolean(checked))}
+                          disabled={!isAdmin}
+                        />
+                        <div
+                          className="h-5 w-5 rounded flex items-center justify-center flex-shrink-0"
+                          style={{ background: company.color || "#6366f1" }}
+                        >
+                          <span className="text-[9px] text-white font-bold">{(company.shortName || company.name).charAt(0)}</span>
+                        </div>
+                        <span className="text-sm font-medium text-slate-700">{company.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    勾选后，该用户可在首页看到并进入对应协同公司。
+                  </p>
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>

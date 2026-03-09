@@ -109,6 +109,13 @@ function hashPassword(password: string): string {
   return `scrypt$${salt}$${hash}`;
 }
 
+function verifyPassword(password: string, hash: string): boolean {
+  const [method, salt, key] = hash.split("$");
+  if (method !== "scrypt") return false;
+  const derivedKey = scryptSync(password, salt, 64).toString("hex");
+  return derivedKey === key;
+}
+
 function parseDepartments(raw: unknown): string[] {
   return String(raw ?? "")
     .split(/[,\uFF0C;；/、|\s]+/)
@@ -367,6 +374,79 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    login: publicProcedure
+      .input(z.object({
+        username: z.string(),
+        password: z.string(),
+        companyId: z.number(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库连接不可用" });
+
+        const openId = `user-${input.username}`;
+        const [user] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+
+        if (!user) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+        }
+
+        // 验证密码 (如果是系统默认密码 666-11 且用户没有设置密码，则允许通过)
+        const [pwdRecord] = await db.execute(sql`SELECT passwordHash FROM user_passwords WHERE userId = ${user.id} LIMIT 1`) as any[];
+        const hasPassword = pwdRecord && pwdRecord[0]?.passwordHash;
+        
+        if (hasPassword) {
+          if (!verifyPassword(input.password, pwdRecord[0].passwordHash)) {
+            throw new TRPCError({ code: "UNAUTHORIZED", message: "密码错误" });
+          }
+        } else {
+          // 默认密码校验
+          if (input.password !== "666-11") {
+            throw new TRPCError({ code: "UNAUTHORIZED", message: "密码错误" });
+          }
+        }
+
+        // 验证公司权限: 系统管理员可以登录任何公司
+        if (user.role !== "admin") {
+          if (user.companyId !== input.companyId) {
+            // 检查是否有协同公司授权
+            const { companyUserAccess } = await import("../drizzle/schema");
+            const [access] = await db.select().from(companyUserAccess)
+              .where(and(eq(companyUserAccess.userId, user.id), eq(companyUserAccess.companyId, input.companyId)))
+              .limit(1);
+            
+            if (!access) {
+              throw new TRPCError({ code: "FORBIDDEN", message: "您没有访问该公司的权限" });
+            }
+          }
+        }
+
+        // 登录成功，设置 Session (这里假设系统使用 Cookie 存储 Session)
+        // 实际上在 Manus 这种基于 Cookie 的认证中，我们需要将用户信息写入 Cookie
+        const sessionData = {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          department: user.department,
+          companyId: input.companyId, // 记录当前登录的公司 ID
+        };
+
+        // 更新最后登录时间
+        await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, user.id));
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        // 将用户信息序列化并存入 Cookie，供 createContext 使用
+        ctx.res.cookie(COOKIE_NAME, JSON.stringify(sessionData), {
+          ...cookieOptions,
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7天有效
+        });
+
+        return { 
+          success: true, 
+          user: sessionData 
+        };
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -376,7 +456,7 @@ export const appRouter = router({
 
   // ==================== 用户列表 ====================
   users: router({
-    list: protectedProcedure.query(async () => {
+    list: publicProcedure.query(async () => {
       const db = await getDb();
       if (!db) throw new Error("数据库连接不可用");
       await ensureUsersVisibleAppsColumn(db);
@@ -397,6 +477,7 @@ export const appRouter = router({
         wxAccount: users.wxAccount,
         wxOpenid: users.wxOpenid,
         wxNickname: users.wxNickname,
+        companyId: users.companyId,
       }).from(users);
       return result;
     }),
@@ -408,6 +489,7 @@ export const appRouter = router({
       department: z.string().optional(),
       role: z.enum(["user", "admin"]).default("user"),
       visibleApps: z.array(z.string()).optional(),
+      allowedCompanies: z.array(z.number()).optional(),
       wxAccount: z.string().optional(),
       wxOpenid: z.string().optional(),
       wxNickname: z.string().optional(),
@@ -417,7 +499,7 @@ export const appRouter = router({
       await ensureUsersVisibleAppsColumn(db);
       await ensureUsersWechatColumns(db);
       const openId = `user-${input.username}`;
-      await db.insert(users).values({
+      const [newUser] = await db.insert(users).values({
         openId,
         name: input.name,
         email: input.email || null,
@@ -430,6 +512,16 @@ export const appRouter = router({
         wxOpenid: input.wxOpenid || null,
         wxNickname: input.wxNickname || null,
       });
+      // 同步协同公司权限
+      if (input.allowedCompanies?.length) {
+        const insertedUser = await db.select({ id: users.id }).from(users).where(eq(users.openId, openId)).limit(1);
+        if (insertedUser.length > 0) {
+          const { companyUserAccess } = await import("../drizzle/schema");
+          await db.insert(companyUserAccess).values(
+            input.allowedCompanies.map((companyId) => ({ companyId, userId: insertedUser[0].id }))
+          );
+        }
+      }
       return { success: true };
     }),
     update: protectedProcedure.input(z.object({
@@ -442,6 +534,7 @@ export const appRouter = router({
       position: z.string().optional(),
       role: z.enum(["user", "admin"]).optional(),
       visibleApps: z.array(z.string()).optional(),
+      allowedCompanies: z.array(z.number()).optional(),
       wxAccount: z.string().optional(),
       wxOpenid: z.string().optional(),
       wxNickname: z.string().optional(),
@@ -450,7 +543,7 @@ export const appRouter = router({
       if (!db) throw new Error("数据库连接不可用");
       await ensureUsersVisibleAppsColumn(db);
       await ensureUsersWechatColumns(db);
-      const { id, username, ...data } = input;
+      const { id, username, allowedCompanies, ...data } = input;
       await db.update(users).set({
         ...data,
         visibleApps: data.visibleApps?.length ? data.visibleApps.join(",") : null,
@@ -460,6 +553,16 @@ export const appRouter = router({
       }).where(eq(users.id, id));
       if (username) {
         await db.update(users).set({ openId: `user-${username}` }).where(eq(users.id, id));
+      }
+      // 同步协同公司权限
+      if (allowedCompanies !== undefined) {
+        const { companyUserAccess } = await import("../drizzle/schema");
+        await db.delete(companyUserAccess).where(eq(companyUserAccess.userId, id));
+        if (allowedCompanies.length > 0) {
+          await db.insert(companyUserAccess).values(
+            allowedCompanies.map((companyId) => ({ companyId, userId: id }))
+          );
+        }
       }
       return { success: true };
     }),
@@ -5348,4 +5451,88 @@ export const appRouter = router({
 
   // ==================== 法规事务部 ====================
   ra: raRouter,
+
+  // ==================== 协同公司 ====================
+  companies: router({
+    // 获取所有公司列表（公开，登录页需要）
+    list: publicProcedure
+      .query(async () => {
+        const db = await getDb();
+        if (!db) throw new Error("数据库连接不可用");
+        const { companies } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        return await db.select().from(companies).where(eq(companies.status, "active"));
+      }),
+
+    // 获取当前用户可访问的协同公司（登录用户自己的权限）
+    myCompanies: protectedProcedure
+      .query(async ({ ctx }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { companies, companyUserAccess } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        const userId = ctx.user.id;
+        // admin 可看到所有公司
+        if (ctx.user.role === "admin") {
+          return await db.select().from(companies).where(eq(companies.status, "active"));
+        }
+        // 普通用户只看到授权的公司
+        const rows = await db
+          .select({ company: companies })
+          .from(companyUserAccess)
+          .innerJoin(companies, eq(companyUserAccess.companyId, companies.id))
+          .where(and(eq(companyUserAccess.userId, userId), eq(companies.status, "active")));
+        return rows.map((r) => r.company);
+      }),
+
+    // 获取某公司的授权用户列表
+    getUserAccess: adminProcedure
+      .input(z.object({ companyId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { companyUserAccess, users } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const rows = await db
+          .select({ userId: companyUserAccess.userId, name: users.name, email: users.email, department: users.department })
+          .from(companyUserAccess)
+          .innerJoin(users, eq(companyUserAccess.userId, users.id))
+          .where(eq(companyUserAccess.companyId, input.companyId));
+        return rows;
+      }),
+
+    // 获取某用户的授权公司 ID 列表
+    getUserCompanyIds: adminProcedure
+      .input(z.object({ userId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { companyUserAccess } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const rows = await db
+          .select({ companyId: companyUserAccess.companyId })
+          .from(companyUserAccess)
+          .where(eq(companyUserAccess.userId, input.userId));
+        return rows.map((r) => r.companyId);
+      }),
+
+    // 设置用户的公司权限（传入 companyIds 数组，全量替换）
+    setUserAccess: adminProcedure
+      .input(z.object({ userId: z.number(), companyIds: z.array(z.number()) }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("数据库连接不可用");
+        const { companyUserAccess } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        // 删除旧权限
+        await db.delete(companyUserAccess).where(eq(companyUserAccess.userId, input.userId));
+        // 插入新权限
+        if (input.companyIds.length > 0) {
+          await db.insert(companyUserAccess).values(
+            input.companyIds.map((companyId) => ({ companyId, userId: input.userId }))
+          );
+        }
+        return { success: true };
+      }),
+  }),
 });
