@@ -253,6 +253,32 @@ const APP_ICONS: Record<string, React.FC<{ className?: string }>> = {
       <path d="M26 36C26 36 28 42 32 42C36 42 38 36 38 36" stroke="white" strokeWidth="2" strokeLinecap="round" strokeOpacity="0.7"/>
     </svg>
   ),
+  "ra": ({ className }) => (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="url(#ra_bg)"/>
+      <defs>
+        <linearGradient id="ra_bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#a855f7"/>
+          <stop offset="1" stopColor="#7c3aed"/>
+        </linearGradient>
+      </defs>
+      <path d="M32 14L46 20V32C46 40 39 47 32 50C25 47 18 40 18 32V20L32 14Z" stroke="white" strokeWidth="2.5" fill="none" strokeOpacity="0.9"/>
+      <path d="M26 32L30 36L38 28" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.9"/>
+    </svg>
+  ),
+  "file-manager": ({ className }) => (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="url(#filemanager_bg)"/>
+      <defs>
+        <linearGradient id="filemanager_bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#f59e0b"/>
+          <stop offset="1" stopColor="#ea580c"/>
+        </linearGradient>
+      </defs>
+      <path d="M14 26C14 24 15.5 22 18 22H28L32 26H46C48 26 50 28 50 30V44C50 46 48 48 46 48H18C16 48 14 46 14 44V26Z" stroke="white" strokeWidth="2.5" fill="none" strokeOpacity="0.9"/>
+      <path d="M24 36H40M32 30V42" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeOpacity="0.8"/>
+    </svg>
+  ),
 };
 
 // 默认图标
