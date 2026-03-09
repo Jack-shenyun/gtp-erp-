@@ -238,6 +238,9 @@ function Router() {
       <Route path="/settings/email" component={EmailSettingsPage} />
       <Route path="/settings/print-templates" component={PrintTemplatesPage} />
 
+      {/* 开发规范示例页面 */}
+      <Route path="/standard-form-example" component={lazy(() => import("./pages/StandardFormExample"))} />
+
       {/* 404 */}
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
