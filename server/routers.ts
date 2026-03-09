@@ -100,6 +100,7 @@ import { orderApprovals, salesOrders as salesOrdersTable, salesOrderItems, inven
   udiLabels,
 } from "../drizzle/schema";
 import { eq, desc, sql, like, and, or } from "drizzle-orm";
+import { notifyTodoToUsers, sendApprovalResultNotification } from "./wechatService";
 
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -1149,6 +1150,23 @@ export const appRouter = router({
           await syncOneReceivableFromSalesOrder(input.id, ctx.user?.id);
         } catch {
           // 应收联动失败不阻塞提审
+        }
+        // 微信待办通知：通知所有管理员和审批人
+        try {
+          const [order] = await db.select().from(salesOrdersTable).where(eq(salesOrdersTable.id, input.id)).limit(1);
+          const adminUsers = await db.execute(`SELECT id FROM users WHERE role IN ('admin','manager') OR position IN ('部门负责人','经理','总监') LIMIT 20`) as any;
+          const adminIds = (adminUsers[0] || []).map((u: any) => u.id).filter(Boolean);
+          if (adminIds.length > 0) {
+            await notifyTodoToUsers({
+              userIds: adminIds,
+              title: `销售订单 ${(order as any)?.orderNo || `#${input.id}`} 待审批`,
+              applicant: ctx.user?.name || '未知',
+              submitTime: new Date().toLocaleString('zh-CN'),
+              remark: `客户：${(order as any)?.customerName || ''}，请登录系统审批`,
+            });
+          }
+        } catch (e) {
+          console.error('[WechatNotify] 销售订单待办通知失败:', e);
         }
         return { success: true };
       }),
