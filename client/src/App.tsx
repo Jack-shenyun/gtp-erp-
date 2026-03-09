@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 
 // 页面导入
 import Dashboard from "./pages/Dashboard";
+import StandardFormExamplePage from "./pages/StandardFormExample";
 import WorkflowCenterPage from "./pages/workflow/Center";
 
 // 管理部模块
@@ -239,7 +240,7 @@ function Router() {
       <Route path="/settings/print-templates" component={PrintTemplatesPage} />
 
       {/* 开发规范示例页面 */}
-      <Route path="/standard-form-example" component={lazy(() => import("./pages/StandardFormExample"))} />
+      <Route path="/standard-form-example" component={StandardFormExamplePage} />
 
       {/* 404 */}
       <Route path="/404" component={NotFound} />
