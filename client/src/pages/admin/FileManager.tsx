@@ -3,7 +3,7 @@
  * 目录层级: /ERP/{部门}/{业务类型}/{年份}/{月份}/
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import ERPLayout from "@/components/ERPLayout";
+import FileManagerLayout from "@/components/FileManagerLayout";
 import { toast } from "sonner";
 import {
   Folder,
@@ -755,11 +755,11 @@ function FileManagerContent() {
 
 export default function FileManagerPage() {
   return (
-    <ERPLayout>
-      <div className="h-[calc(100vh-7rem)] flex flex-col">
+    <FileManagerLayout>
+      <div className="h-[calc(100vh-3rem)] flex flex-col">
         <FileManagerContent />
       </div>
-    </ERPLayout>
+    </FileManagerLayout>
   );
 }
 
