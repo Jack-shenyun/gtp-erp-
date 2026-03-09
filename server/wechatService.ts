@@ -45,32 +45,59 @@ export async function getAccessToken(): Promise<string> {
 }
 
 // ============================================================
-// 模板消息发送
+// 一次性订阅消息发送（订阅号使用此接口）
 // ============================================================
-export interface WechatTemplateMessage {
+export interface WechatSubscribeMessage {
   touser: string;           // 接收者 openid
   template_id: string;      // 模板 ID
   url?: string;             // 点击跳转 URL
-  miniprogram?: { appid: string; pagepath: string };
+  scene: string;            // 场景值（与用户订阅时的 scene 一致）
+  title: string;            // 消息标题
   data: Record<string, { value: string; color?: string }>;
 }
 
-export async function sendTemplateMessage(msg: WechatTemplateMessage): Promise<{ success: boolean; msgid?: number; error?: string }> {
+export async function sendSubscribeMessage(msg: WechatSubscribeMessage): Promise<{ success: boolean; msgid?: number; error?: string }> {
   try {
     const token = await getAccessToken();
-    const res = await fetch(`https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${token}`, {
+    // 一次性订阅消息接口
+    const res = await fetch(`https://api.weixin.qq.com/cgi-bin/message/subscribe/bizsend?access_token=${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(msg),
+      body: JSON.stringify({
+        receiver: { user_open_id: msg.touser },
+        template_id: msg.template_id,
+        page: msg.url || "",
+        data: msg.data,
+      }),
     });
     const data = await res.json() as any;
     if (data.errcode && data.errcode !== 0) {
-      return { success: false, error: `${data.errmsg} (${data.errcode})` };
+      // 降级：尝试普通模板消息接口（服务号）
+      const res2 = await fetch(`https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          touser: msg.touser,
+          template_id: msg.template_id,
+          url: msg.url,
+          data: msg.data,
+        }),
+      });
+      const data2 = await res2.json() as any;
+      if (data2.errcode && data2.errcode !== 0) {
+        return { success: false, error: `${data2.errmsg} (${data2.errcode})` };
+      }
+      return { success: true, msgid: data2.msgid };
     }
     return { success: true, msgid: data.msgid };
   } catch (e: any) {
     return { success: false, error: e.message };
   }
+}
+
+// 兼容旧调用
+export async function sendTemplateMessage(msg: { touser: string; template_id: string; url?: string; data: Record<string, { value: string; color?: string }> }): Promise<{ success: boolean; msgid?: number; error?: string }> {
+  return sendSubscribeMessage({ ...msg, scene: "todo", title: "待办提醒" });
 }
 
 // ============================================================
