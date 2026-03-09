@@ -3,6 +3,7 @@
  * 目录层级: /ERP/{部门}/{业务类型}/{年份}/{月份}/
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import FileManagerLayout from "@/components/FileManagerLayout";
 import { toast } from "sonner";
 import {
@@ -19,6 +20,7 @@ import {
   Trash2,
   RefreshCw,
   ChevronRight,
+  ChevronLeft,
   Home,
   ArrowLeft,
   MoreVertical,
@@ -269,6 +271,7 @@ function FileRow({
 // 主组件
 // ============================================================
 function FileManagerContent() {
+  const navigate = useNavigate();
   const [currentPath, setCurrentPath] = useState("/ERP");
   const [history, setHistory] = useState<string[]>([]);
   const [items, setItems] = useState<FileItem[]>([]);
@@ -571,8 +574,8 @@ function FileManagerContent() {
       {/* ── 主内容区 ── */}
       <div className="flex flex-1 overflow-hidden">
         {/* 左侧导航树（仅显示部门级） */}
-        <div className="w-44 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
-          <div className="p-2">
+        <div className="w-44 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-col">
+          <div className="p-2 flex-1 overflow-y-auto">
             <button
               className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${currentPath === "/ERP" ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"}`}
               onClick={() => { setHistory([]); loadDirectory("/ERP"); }}
@@ -584,6 +587,16 @@ function FileManagerContent() {
               currentPath={currentPath}
               onNavigate={navigateTo}
             />
+          </div>
+          {/* 返回主页 */}
+          <div className="p-2 border-t border-gray-200 dark:border-gray-800">
+            <button
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400"
+              onClick={() => navigate("/")}
+            >
+              <ChevronLeft className="w-4 h-4 flex-shrink-0" />
+              <span className="truncate">返回主页</span>
+            </button>
           </div>
         </div>
 
