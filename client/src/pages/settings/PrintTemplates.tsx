@@ -390,7 +390,7 @@ export default function PrintTemplatesPage() {
 
             <div className="flex gap-4" style={{ height: editFullscreen ? "calc(98vh - 140px)" : "calc(92vh - 160px)" }}>
               {/* 左侧：编辑器 */}
-              <div className="flex-1 flex flex-col min-w-0">
+              <div className="w-[55%] flex flex-col min-w-0">
                 {/* 基本信息 */}
                 <div className="grid grid-cols-4 gap-3 mb-3">
                   <div className="space-y-1">
@@ -552,7 +552,7 @@ export default function PrintTemplatesPage() {
               </div>
 
               {/* 右侧：实时预览 */}
-              <div className="w-[480px] flex flex-col shrink-0 border rounded-lg overflow-hidden">
+              <div className="w-[45%] flex flex-col shrink-0 border rounded-lg overflow-hidden">
                 <div className="bg-muted px-3 py-2 text-xs text-muted-foreground flex items-center justify-between border-b">
                   <span className="flex items-center gap-1.5">
                     <Eye className="h-3.5 w-3.5" />
@@ -564,26 +564,17 @@ export default function PrintTemplatesPage() {
                     </Button>
                   </div>
                 </div>
-                <div className="flex-1 bg-gray-100 overflow-auto p-3">
-                  <div className="bg-white shadow-md mx-auto" style={{
-                    width: editingOrientation === "landscape" ? "420px" : "340px",
-                    minHeight: editingOrientation === "landscape" ? "240px" : "480px",
-                    transform: "scale(1)",
-                    transformOrigin: "top center",
-                  }}>
-                    <iframe
-                      ref={previewRef}
-                      className="w-full border-0"
-                      style={{
-                        height: editingOrientation === "landscape" ? "600px" : "900px",
-                        transform: editingOrientation === "landscape" ? "scale(0.7)" : "scale(0.7)",
-                        transformOrigin: "top left",
-                        width: "142.8%",
-                      }}
-                      title="打印预览"
-                      sandbox="allow-same-origin"
-                    />
-                  </div>
+                <div className="flex-1 bg-gray-100 overflow-auto p-2">
+                  <iframe
+                    ref={previewRef}
+                    className="w-full border-0 bg-white shadow-md"
+                    style={{
+                      height: "100%",
+                      minHeight: editingOrientation === "landscape" ? "500px" : "800px",
+                    }}
+                    title="打印预览"
+                    sandbox="allow-same-origin"
+                  />
                 </div>
               </div>
             </div>
