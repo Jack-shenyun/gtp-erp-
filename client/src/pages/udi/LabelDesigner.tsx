@@ -28,8 +28,8 @@ import {
   Stethoscope, RotateCcw, MousePointer, Move, GripVertical,
 } from "lucide-react";
 import { toast } from "sonner";
-import QRCode from "qrcode";
-import JsBarcode from "jsbarcode";
+import bwipjs from "bwip-js";
+import { isGS1Format, is2DFormat, BARCODE_FORMAT_OPTIONS, validateGS1Data, formatHRI, formatHRILines } from "@/lib/gs1BarcodeUtils";
 import { MEDICAL_SYMBOLS, renderMedicalSymbol } from "@/components/udi/MedicalSymbols";
 
 // ── 类型定义 ──────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ const SAMPLE_DATA: Record<string, string> = {
   phone: "+86-512-12345678",
 };
 
-const BARCODE_FORMATS = ["CODE128", "CODE39", "EAN13", "EAN8", "ITF14", "GS1-128", "UPC"];
+const BARCODE_FORMATS = BARCODE_FORMAT_OPTIONS;
 const FONT_FAMILIES = [
   { value: "Arial", label: "Arial" },
   { value: "Helvetica", label: "Helvetica" },
@@ -201,13 +201,13 @@ const PRESET_TEMPLATES: LabelTemplate[] = [
       // 条码区域
       { id: uid(), type: "line", x: 5, y: 96, width: 92, height: 0.3, content: "", color: "#ccc" },
       { id: uid(), type: "symbol", x: 5, y: 98, width: 6, height: 6, content: "", symbolId: "udi", color: "#000" },
-      { id: uid(), type: "qrcode", x: 14, y: 98, width: 14, height: 14, content: "06975573321040", fieldBinding: "gtin", color: "#000" },
+      { id: uid(), type: "qrcode", x: 14, y: 98, width: 14, height: 14, content: "(01)06975573321040(17)250924(10)2024092401", barcodeFormat: "GS1-DATAMATRIX", color: "#000" },
       { id: uid(), type: "text", x: 32, y: 98, width: 60, height: 4, content: "(01) 06975573321040", fontSize: 7, fontWeight: "bold", textAlign: "left", color: "#c00", fontFamily: "Courier New" },
       { id: uid(), type: "text", x: 32, y: 103, width: 60, height: 4, content: "(11) 240924", fontSize: 7, fontWeight: "bold", textAlign: "left", color: "#c00", fontFamily: "Courier New" },
       { id: uid(), type: "text", x: 32, y: 108, width: 60, height: 4, content: "(10) 2024092401", fontSize: 7, fontWeight: "bold", textAlign: "left", color: "#c00", fontFamily: "Courier New" },
       // GS1-128 条码
-      { id: uid(), type: "barcode", x: 5, y: 115, width: 92, height: 12, content: "0106975573321101172501121020230113011", fieldBinding: "gtin", barcodeFormat: "CODE128", showText: true, color: "#000" },
-      { id: uid(), type: "barcode", x: 5, y: 129, width: 92, height: 12, content: "0106975573321101172501121020230113012", fieldBinding: "gtin", barcodeFormat: "CODE128", showText: true, color: "#000" },
+      { id: uid(), type: "barcode", x: 5, y: 115, width: 92, height: 12, content: "(01)06975573321101(17)250112(10)20230113011", barcodeFormat: "GS1-128", showText: true, color: "#000" },
+      { id: uid(), type: "barcode", x: 5, y: 129, width: 92, height: 12, content: "(01)06975573321101(17)250112(10)20230113012", barcodeFormat: "GS1-128", showText: true, color: "#000" },
       // 版本号
       { id: uid(), type: "text", x: 75, y: 144, width: 22, height: 4, content: "Ver.03", fieldBinding: "custom", fontSize: 7, textAlign: "right", color: "#c00" },
     ],
@@ -227,10 +227,10 @@ const PRESET_TEMPLATES: LabelTemplate[] = [
       { id: uid(), type: "text", x: 5, y: 30, width: 90, height: 5, content: "Rx Only", fontSize: 9, fontWeight: "bold", fontStyle: "italic", textAlign: "left", color: "#000" },
       { id: uid(), type: "text", x: 5, y: 37, width: 90, height: 10, content: "Suzhou Shenyun Medical Equipment Co., Ltd\nJiangsu Province, China, 215106", fieldBinding: "manufacturerEn", fontSize: 7, textAlign: "left", color: "#333", lineHeight: 1.3 },
       { id: uid(), type: "line", x: 5, y: 49, width: 90, height: 0.3, content: "", color: "#000" },
-      { id: uid(), type: "barcode", x: 5, y: 52, width: 60, height: 12, content: "06975573321040", fieldBinding: "gtin", barcodeFormat: "CODE128", showText: true, color: "#000" },
-      { id: uid(), type: "qrcode", x: 72, y: 52, width: 14, height: 14, content: "06975573321040", fieldBinding: "gtin", color: "#000" },
+      { id: uid(), type: "barcode", x: 5, y: 52, width: 60, height: 12, content: "(01)06975573321040", fieldBinding: "gtin", barcodeFormat: "GS1-128", showText: true, color: "#000" },
+      { id: uid(), type: "qrcode", x: 72, y: 52, width: 14, height: 14, content: "(01)06975573321040(17)260923(10)2024092401", barcodeFormat: "GS1-DATAMATRIX", color: "#000" },
       { id: uid(), type: "text", x: 5, y: 67, width: 90, height: 4, content: "FDA Listing: K123456", fieldBinding: "custom", fontSize: 7, textAlign: "left", color: "#555" },
-      { id: uid(), type: "barcode", x: 5, y: 72, width: 90, height: 7, content: "0106975573321101172501121020230113011", fieldBinding: "gtin", barcodeFormat: "CODE128", showText: false, color: "#000" },
+      { id: uid(), type: "barcode", x: 5, y: 72, width: 90, height: 7, content: "(01)06975573321101(17)250112(10)20230113011", barcodeFormat: "GS1-128", showText: false, color: "#000" },
     ],
   },
   {
@@ -247,8 +247,8 @@ const PRESET_TEMPLATES: LabelTemplate[] = [
       { id: uid(), type: "text", x: 5, y: 40, width: 90, height: 5, content: "生产企业：苏州神运医疗器械有限公司", fieldBinding: "manufacturer", fontSize: 8, textAlign: "left", color: "#000" },
       { id: uid(), type: "text", x: 5, y: 46, width: 90, height: 5, content: "地址：江苏省苏州市吴中区临湖镇银藏路666号11幢", fieldBinding: "address", fontSize: 7, textAlign: "left", color: "#333" },
       { id: uid(), type: "line", x: 5, y: 53, width: 90, height: 0.3, content: "", color: "#000" },
-      { id: uid(), type: "barcode", x: 5, y: 56, width: 60, height: 12, content: "06975573321040", fieldBinding: "gtin", barcodeFormat: "CODE128", showText: true, color: "#000" },
-      { id: uid(), type: "qrcode", x: 72, y: 56, width: 14, height: 14, content: "06975573321040", fieldBinding: "gtin", color: "#000" },
+      { id: uid(), type: "barcode", x: 5, y: 56, width: 60, height: 12, content: "(01)06975573321040", fieldBinding: "gtin", barcodeFormat: "GS1-128", showText: true, color: "#000" },
+      { id: uid(), type: "qrcode", x: 72, y: 56, width: 14, height: 14, content: "(01)06975573321040(17)260923(10)2024092401", barcodeFormat: "GS1-DATAMATRIX", color: "#000" },
       { id: uid(), type: "text", x: 5, y: 72, width: 90, height: 4, content: "UDI-DI: 06975573320097D2", fieldBinding: "udiDi", fontSize: 7, textAlign: "left", color: "#555" },
     ],
   },
@@ -289,7 +289,7 @@ export default function LabelDesignerPage() {
       return stored ? JSON.parse(stored) : [];
     } catch { return []; }
   });
-  const barcodeRefs = useRef<Record<string, SVGSVGElement | null>>({});
+  const barcodeRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
   const qrcodeRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
 
   const selectedEl = template.elements.find(e => e.id === selectedId) ?? null;
@@ -343,20 +343,31 @@ export default function LabelDesignerPage() {
     setTemplate(next);
   };
 
-  // ── 条码渲染 ──────────────────────────────────────────────────
+  // ── 条码渲染 (bwip-js, 符合GS1 UDI标准) ──────────────────────
   useEffect(() => {
     template.elements.forEach(el => {
       if (el.type === "barcode") {
-        const svgEl = barcodeRefs.current[el.id];
-        if (svgEl) {
+        const canvasEl = barcodeRefs.current[el.id];
+        if (canvasEl) {
           try {
             const val = el.fieldBinding && el.fieldBinding !== "custom"
               ? (SAMPLE_DATA[el.fieldBinding] ?? el.content) : el.content;
-            JsBarcode(svgEl, val || "0000000000", {
-              format: el.barcodeFormat === "GS1-128" ? "CODE128" : (el.barcodeFormat ?? "CODE128"),
-              displayValue: el.showText !== false,
-              width: 1.2, height: mmToPx(el.height) - (el.showText !== false ? 14 : 2),
-              margin: 1, fontSize: 8,
+            const fmt = el.barcodeFormat ?? "CODE128";
+            const formatMap: Record<string, string> = {
+              "CODE128": "code128", "CODE39": "code39", "EAN13": "ean13",
+              "EAN8": "ean8", "ITF14": "itf14", "UPC": "upca",
+              "GS1-128": "gs1-128", "GS1-DATAMATRIX": "gs1datamatrix",
+              "DATAMATRIX": "datamatrix",
+            };
+            const bcid = formatMap[fmt.toUpperCase()] ?? "code128";
+            bwipjs.toCanvas(canvasEl, {
+              bcid,
+              text: val || "0000000000",
+              scale: 2,
+              height: Math.max(5, mmToPx(el.height) / 4),
+              includetext: el.showText !== false,
+              textxalign: "center",
+              textsize: 8,
             });
           } catch { /* invalid barcode data */ }
         }
@@ -364,12 +375,19 @@ export default function LabelDesignerPage() {
       if (el.type === "qrcode") {
         const canvasEl = qrcodeRefs.current[el.id];
         if (canvasEl) {
-          const val = el.fieldBinding && el.fieldBinding !== "custom"
-            ? (SAMPLE_DATA[el.fieldBinding] ?? el.content) : el.content;
-          QRCode.toCanvas(canvasEl, val || "UDI", {
-            width: mmToPx(Math.min(el.width, el.height)), margin: 1,
-            color: { dark: el.color ?? "#000000", light: "#ffffff" },
-          }).catch(() => {});
+          try {
+            const val = el.fieldBinding && el.fieldBinding !== "custom"
+              ? (SAMPLE_DATA[el.fieldBinding] ?? el.content) : el.content;
+            const fmt = el.barcodeFormat ?? "GS1-DATAMATRIX";
+            const isGS1 = fmt.toUpperCase().includes("GS1");
+            bwipjs.toCanvas(canvasEl, {
+              bcid: isGS1 ? "gs1datamatrix" : "datamatrix",
+              text: val || "(01)00000000000000",
+              scale: 3,
+              paddingwidth: 1,
+              paddingheight: 1,
+            });
+          } catch { /* invalid qrcode data */ }
         }
       }
     });
@@ -706,7 +724,7 @@ export default function LabelDesignerPage() {
     if (el.type === "barcode") return (
       <div key={el.id} onMouseDown={e => handleMouseDown(e, el.id)}
         style={{ ...baseStyle, outline: selBorder, outlineOffset: selOutlineOffset }}>
-        <svg ref={ref => { barcodeRefs.current[el.id] = ref; }} style={{ width: "100%", height: "100%" }} />
+        <canvas ref={ref => { barcodeRefs.current[el.id] = ref; }} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
         {resizeHandles}
       </div>
     );
@@ -990,7 +1008,7 @@ export default function LabelDesignerPage() {
                             ? FIELD_OPTIONS.find(f => f.value === el.fieldBinding)?.label
                             : (el.content || "文本").slice(0, 12))
                           : el.type === "symbol"
-                          ? MEDICAL_SYMBOLS.find(s => s.id === el.symbolId)?.name || "符号"
+                          ? MEDICAL_SYMBOLS.find(s => s.id === el.symbolId)?.nameZh || "符号"
                           : el.type}
                       </span>
                       {el.locked && <span className="text-[8px] text-orange-500">锁</span>}
@@ -1006,8 +1024,8 @@ export default function LabelDesignerPage() {
                   {MEDICAL_SYMBOLS.map(sym => (
                     <button key={sym.id} onClick={() => addSymbol(sym.id)}
                       className="flex flex-col items-center gap-1 p-2 rounded-md border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 transition-colors">
-                      <sym.Component size={20} color="#333" />
-                      <span className="text-[9px] text-gray-600 leading-tight text-center">{sym.name}</span>
+                      {sym.render(20, "#333")}
+                      <span className="text-[9px] text-gray-600 leading-tight text-center">{sym.nameZh}</span>
                     </button>
                   ))}
                 </div>
@@ -1216,7 +1234,7 @@ export default function LabelDesignerPage() {
                           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {MEDICAL_SYMBOLS.map(s => (
-                              <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                              <SelectItem key={s.id} value={s.id} className="text-xs">{s.nameZh}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1303,7 +1321,7 @@ export default function LabelDesignerPage() {
                             <Select value={selectedEl.barcodeFormat ?? "CODE128"} onValueChange={v => updateEl({ barcodeFormat: v })}>
                               <SelectTrigger className="h-6 text-[10px]"><SelectValue /></SelectTrigger>
                               <SelectContent>
-                                {BARCODE_FORMATS.map(f => <SelectItem key={f} value={f} className="text-xs">{f}</SelectItem>)}
+                                {BARCODE_FORMATS.map(f => <SelectItem key={f.value} value={f.value} className="text-xs">{f.label}{f.isUDI && <Badge variant="outline" className="ml-1 text-[8px] h-3 px-1 text-green-600 border-green-300">UDI</Badge>}</SelectItem>)}
                               </SelectContent>
                             </Select>
                           </div>
