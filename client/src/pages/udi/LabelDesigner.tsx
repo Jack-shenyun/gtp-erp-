@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import bwipjs from "bwip-js";
 import { isGS1Format, is2DFormat, BARCODE_FORMAT_OPTIONS, validateGS1Data, formatHRI, formatHRILines } from "@/lib/gs1BarcodeUtils";
 import { MEDICAL_SYMBOLS, renderMedicalSymbol } from "@/components/udi/MedicalSymbols";
+import BatchPrintDialog from "@/components/udi/BatchPrintDialog";
 
 // ── 类型定义 ──────────────────────────────────────────────────────
 type ElementType = "text" | "barcode" | "qrcode" | "line" | "rect" | "symbol" | "image";
@@ -281,6 +282,7 @@ export default function LabelDesignerPage() {
   const [history, setHistory] = useState<HistoryState>({ past: [], future: [] });
   const [leftTab, setLeftTab] = useState("tools");
   const [showPresetDialog, setShowPresetDialog] = useState(false);
+  const [showBatchPrint, setShowBatchPrint] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [templateNameInput, setTemplateNameInput] = useState("");
   const [savedTemplates, setSavedTemplates] = useState<LabelTemplate[]>(() => {
@@ -925,9 +927,15 @@ export default function LabelDesignerPage() {
               onClick={() => setPreviewMode(!previewMode)}>
               <Eye className="w-3.5 h-3.5" /> {previewMode ? "退出预览" : "预览"}
             </Button>
-            <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={handlePrint}>
-              <Printer className="w-3.5 h-3.5" /> 打印
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1 h-7 text-xs"><Printer className="w-3.5 h-3.5" />打印<ChevronDown className="w-3 h-3" /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handlePrint} className="gap-2 text-xs"><Printer className="w-3.5 h-3.5" />单张打印</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowBatchPrint(true)} className="gap-2 text-xs"><Layers className="w-3.5 h-3.5" />批量打印 (Excel/CSV)</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button size="sm" className="gap-1 h-7 text-xs" onClick={saveTemplate}>
               <Save className="w-3.5 h-3.5" /> 保存
             </Button>
@@ -1442,6 +1450,14 @@ export default function LabelDesignerPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 批量打印对话框 */}
+      <BatchPrintDialog
+        open={showBatchPrint}
+        onOpenChange={setShowBatchPrint}
+        template={template}
+        fieldOptions={FIELD_OPTIONS}
+      />
     </ERPLayout>
   );
 }
