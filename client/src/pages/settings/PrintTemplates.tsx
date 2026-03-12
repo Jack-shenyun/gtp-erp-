@@ -367,13 +367,1488 @@ function createProductionOrderTemplate(): SpreadsheetData {
   return data;
 }
 
+
+
+// ==================== 辅助函数 ====================
+// 批量设置合并单元格（被覆盖的格）
+function setMergedCells(c: Record<string, any>, parentKey: string, rows: number[], cols: number[]) {
+  for (const r of rows) {
+    for (const col of cols) {
+      const key = `${r},${col}`;
+      if (key !== parentKey) c[key] = { value: "", merged: true, mergeParent: parentKey };
+    }
+  }
+}
+
+// ==================== 物料申请单 ====================
+function createMaterialRequisitionTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(20, 8);
+  data.colWidths = [40, 120, 120, 80, 80, 60, 60, 100];
+  data.rowHeights = [32, 28, 6, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 24, 6, 28, 24, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#e8f5e9", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  // 标题
+  c["0,0"] = { value: "物 料 申 请 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 8, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "MATERIAL REQUISITION", bold: false, fontSize: 10, textAlign: "center", verticalAlign: "middle", colSpan: 8, ...noBorder, color: "#6b7280", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  // 空行
+  c["2,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  // 基本信息
+  c["3,0"] = { value: "申请部门：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${department}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "申请日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${applyDate}", ...infoStyle, colSpan: 2 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "申请人：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${applicantName}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "关联工单：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${productionOrderNo}", ...infoStyle, colSpan: 2 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  // 空行
+  c["5,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`5,${i}`] = { value: "", merged: true, mergeParent: "5,0" };
+
+  // 表头
+  c["6,0"] = { value: "序号", ...headerStyle };
+  c["6,1"] = { value: "物料编码", ...headerStyle };
+  c["6,2"] = { value: "物料名称", ...headerStyle };
+  c["6,3"] = { value: "规格型号", ...headerStyle };
+  c["6,4"] = { value: "申请数量", ...headerStyle };
+  c["6,5"] = { value: "单位", ...headerStyle };
+  c["6,6"] = { value: "需求日期", ...headerStyle };
+  c["6,7"] = { value: "备注", ...headerStyle };
+
+  // 明细行
+  c["7,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["7,1"] = { value: "${items.materialCode}", ...bodyStyle };
+  c["7,2"] = { value: "${items.materialName}", ...bodyStyle, textAlign: "left" };
+  c["7,3"] = { value: "${items.specification}", ...bodyStyle };
+  c["7,4"] = { value: "${items.quantity}", ...bodyStyle };
+  c["7,5"] = { value: "${items.unit}", ...bodyStyle };
+  c["7,6"] = { value: "${items.requiredDate}", ...bodyStyle };
+  c["7,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  // 空行
+  c["8,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,0" };
+
+  // 签名区
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["9,0"] = { value: "制单人", ...sigHeaderStyle, colSpan: 2 };
+  c["9,1"] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,2"] = { value: "部门主管", ...sigHeaderStyle, colSpan: 2 };
+  c["9,3"] = { value: "", merged: true, mergeParent: "9,2" };
+  c["9,4"] = { value: "仓库审核", ...sigHeaderStyle, colSpan: 2 };
+  c["9,5"] = { value: "", merged: true, mergeParent: "9,4" };
+  c["9,6"] = { value: "批准人", ...sigHeaderStyle, colSpan: 2 };
+  c["9,7"] = { value: "", merged: true, mergeParent: "9,6" };
+
+  c["10,0"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["10,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,0"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,2"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["10,3"] = { value: "", merged: true, mergeParent: "10,2" };
+  c["11,2"] = { value: "", merged: true, mergeParent: "10,2" };
+  c["11,3"] = { value: "", merged: true, mergeParent: "10,2" };
+  c["10,4"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["10,5"] = { value: "", merged: true, mergeParent: "10,4" };
+  c["11,4"] = { value: "", merged: true, mergeParent: "10,4" };
+  c["11,5"] = { value: "", merged: true, mergeParent: "10,4" };
+  c["10,6"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["10,7"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["11,6"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["11,7"] = { value: "", merged: true, mergeParent: "10,6" };
+
+  c["12,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,0" };
+
+  return data;
+}
+
+// ==================== 入库单 ====================
+function createWarehouseInTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(18, 9);
+  data.colWidths = [40, 110, 110, 80, 70, 60, 80, 80, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 24, 6, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#e3f2fd", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  c["0,0"] = { value: "入 库 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 9, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 9; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "WAREHOUSE RECEIPT", bold: false, fontSize: 10, textAlign: "center", colSpan: 9, ...noBorder, color: "#6b7280", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 9; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 9, ...noBorder };
+  for (let i = 1; i < 9; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "入库单号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${inboundNo}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "入库日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${inboundDate}", ...infoStyle, colSpan: 3 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+  c["3,8"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "入库类型：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${inboundType}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "仓库：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${warehouseName}", ...infoStyle, colSpan: 3 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+  c["4,8"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "", colSpan: 9, ...noBorder };
+  for (let i = 1; i < 9; i++) c[`5,${i}`] = { value: "", merged: true, mergeParent: "5,0" };
+
+  c["6,0"] = { value: "序号", ...headerStyle };
+  c["6,1"] = { value: "物料编码", ...headerStyle };
+  c["6,2"] = { value: "物料名称", ...headerStyle };
+  c["6,3"] = { value: "规格型号", ...headerStyle };
+  c["6,4"] = { value: "数量", ...headerStyle };
+  c["6,5"] = { value: "单位", ...headerStyle };
+  c["6,6"] = { value: "批号", ...headerStyle };
+  c["6,7"] = { value: "库位", ...headerStyle };
+  c["6,8"] = { value: "备注", ...headerStyle };
+
+  c["7,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["7,1"] = { value: "${items.materialCode}", ...bodyStyle };
+  c["7,2"] = { value: "${items.materialName}", ...bodyStyle, textAlign: "left" };
+  c["7,3"] = { value: "${items.specification}", ...bodyStyle };
+  c["7,4"] = { value: "${items.quantity}", ...bodyStyle };
+  c["7,5"] = { value: "${items.unit}", ...bodyStyle };
+  c["7,6"] = { value: "${items.batchNo}", ...bodyStyle };
+  c["7,7"] = { value: "${items.location}", ...bodyStyle };
+  c["7,8"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["8,0"] = { value: "", colSpan: 9, ...noBorder };
+  for (let i = 1; i < 9; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["9,0"] = { value: "制单人", ...sigHeaderStyle, colSpan: 3 };
+  c["9,1"] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,2"] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,3"] = { value: "审核人", ...sigHeaderStyle, colSpan: 3 };
+  c["9,4"] = { value: "", merged: true, mergeParent: "9,3" };
+  c["9,5"] = { value: "", merged: true, mergeParent: "9,3" };
+  c["9,6"] = { value: "仓管员", ...sigHeaderStyle, colSpan: 3 };
+  c["9,7"] = { value: "", merged: true, mergeParent: "9,6" };
+  c["9,8"] = { value: "", merged: true, mergeParent: "9,6" };
+
+  c["10,0"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 2 };
+  c["10,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,2"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,0"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,2"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,3"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 2 };
+  c["10,4"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["10,5"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["11,3"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["11,4"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["11,5"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["10,6"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 2 };
+  c["10,7"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["10,8"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["11,6"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["11,7"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["11,8"] = { value: "", merged: true, mergeParent: "10,6" };
+
+  c["12,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 9, ...noBorder };
+  for (let i = 1; i < 9; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,0" };
+
+  return data;
+}
+
+// ==================== 出库单 ====================
+function createWarehouseOutTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(18, 9);
+  data.colWidths = [40, 110, 110, 80, 70, 60, 80, 80, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 24, 6, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#fff3e0", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  c["0,0"] = { value: "出 库 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 9, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 9; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "WAREHOUSE ISSUE", bold: false, fontSize: 10, textAlign: "center", colSpan: 9, ...noBorder, color: "#6b7280", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 9; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 9, ...noBorder };
+  for (let i = 1; i < 9; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "出库单号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${outboundNo}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "出库日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${outboundDate}", ...infoStyle, colSpan: 3 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+  c["3,8"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "出库类型：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${outboundType}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "领料部门：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${recipientDept}", ...infoStyle, colSpan: 3 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+  c["4,8"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "", colSpan: 9, ...noBorder };
+  for (let i = 1; i < 9; i++) c[`5,${i}`] = { value: "", merged: true, mergeParent: "5,0" };
+
+  c["6,0"] = { value: "序号", ...headerStyle };
+  c["6,1"] = { value: "物料编码", ...headerStyle };
+  c["6,2"] = { value: "物料名称", ...headerStyle };
+  c["6,3"] = { value: "规格型号", ...headerStyle };
+  c["6,4"] = { value: "数量", ...headerStyle };
+  c["6,5"] = { value: "单位", ...headerStyle };
+  c["6,6"] = { value: "批号", ...headerStyle };
+  c["6,7"] = { value: "库位", ...headerStyle };
+  c["6,8"] = { value: "备注", ...headerStyle };
+
+  c["7,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["7,1"] = { value: "${items.materialCode}", ...bodyStyle };
+  c["7,2"] = { value: "${items.materialName}", ...bodyStyle, textAlign: "left" };
+  c["7,3"] = { value: "${items.specification}", ...bodyStyle };
+  c["7,4"] = { value: "${items.quantity}", ...bodyStyle };
+  c["7,5"] = { value: "${items.unit}", ...bodyStyle };
+  c["7,6"] = { value: "${items.batchNo}", ...bodyStyle };
+  c["7,7"] = { value: "${items.location}", ...bodyStyle };
+  c["7,8"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["8,0"] = { value: "", colSpan: 9, ...noBorder };
+  for (let i = 1; i < 9; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["9,0"] = { value: "制单人", ...sigHeaderStyle, colSpan: 2 };
+  c["9,1"] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,2"] = { value: "审核人", ...sigHeaderStyle, colSpan: 2 };
+  c["9,3"] = { value: "", merged: true, mergeParent: "9,2" };
+  c["9,4"] = { value: "领料人", ...sigHeaderStyle, colSpan: 3 };
+  c["9,5"] = { value: "", merged: true, mergeParent: "9,4" };
+  c["9,6"] = { value: "", merged: true, mergeParent: "9,4" };
+  c["9,6"] = { value: "仓管员", ...sigHeaderStyle, colSpan: 3 };
+  c["9,7"] = { value: "", merged: true, mergeParent: "9,6" };
+  c["9,8"] = { value: "", merged: true, mergeParent: "9,6" };
+
+  c["10,0"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["10,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,0"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,2"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["10,3"] = { value: "", merged: true, mergeParent: "10,2" };
+  c["11,2"] = { value: "", merged: true, mergeParent: "10,2" };
+  c["11,3"] = { value: "", merged: true, mergeParent: "10,2" };
+  c["10,4"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["10,5"] = { value: "", merged: true, mergeParent: "10,4" };
+  c["11,4"] = { value: "", merged: true, mergeParent: "10,4" };
+  c["11,5"] = { value: "", merged: true, mergeParent: "10,4" };
+  c["10,6"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 2 };
+  c["10,7"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["10,8"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["11,6"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["11,7"] = { value: "", merged: true, mergeParent: "10,6" };
+  c["11,8"] = { value: "", merged: true, mergeParent: "10,6" };
+
+  c["12,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 9, ...noBorder };
+  for (let i = 1; i < 9; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,0" };
+
+  return data;
+}
+
+// ==================== 盘点单 ====================
+function createInventoryCheckTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(18, 10);
+  data.colWidths = [40, 110, 110, 80, 50, 80, 80, 70, 70, 70];
+  data.rowHeights = [32, 28, 6, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 24, 6, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#f3e5f5", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  c["0,0"] = { value: "库 存 盘 点 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 10, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 10; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "INVENTORY CHECK SHEET", bold: false, fontSize: 10, textAlign: "center", colSpan: 10, ...noBorder, color: "#6b7280", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 10; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "盘点单号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${checkNo}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "盘点日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${checkDate}", ...infoStyle, colSpan: 4 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+  c["3,8"] = { value: "", merged: true, mergeParent: "3,6" };
+  c["3,9"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "仓库：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${warehouseName}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "负责人：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${handlerName}", ...infoStyle, colSpan: 4 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+  c["4,8"] = { value: "", merged: true, mergeParent: "4,6" };
+  c["4,9"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`5,${i}`] = { value: "", merged: true, mergeParent: "5,0" };
+
+  c["6,0"] = { value: "序号", ...headerStyle };
+  c["6,1"] = { value: "物料编码", ...headerStyle };
+  c["6,2"] = { value: "物料名称", ...headerStyle };
+  c["6,3"] = { value: "规格型号", ...headerStyle };
+  c["6,4"] = { value: "单位", ...headerStyle };
+  c["6,5"] = { value: "库位/批号", ...headerStyle };
+  c["6,6"] = { value: "账面数量", ...headerStyle };
+  c["6,7"] = { value: "实盘数量", ...headerStyle };
+  c["6,8"] = { value: "盈亏数量", ...headerStyle };
+  c["6,9"] = { value: "备注", ...headerStyle };
+
+  c["7,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["7,1"] = { value: "${items.materialCode}", ...bodyStyle };
+  c["7,2"] = { value: "${items.materialName}", ...bodyStyle, textAlign: "left" };
+  c["7,3"] = { value: "${items.specification}", ...bodyStyle };
+  c["7,4"] = { value: "${items.unit}", ...bodyStyle };
+  c["7,5"] = { value: "${items.location}", ...bodyStyle };
+  c["7,6"] = { value: "${items.bookQuantity}", ...bodyStyle };
+  c["7,7"] = { value: "${items.actualQuantity}", ...bodyStyle };
+  c["7,8"] = { value: "${items.diffQuantity}", ...bodyStyle };
+  c["7,9"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["8,0"] = { value: "", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["9,0"] = { value: "盘点员", ...sigHeaderStyle, colSpan: 3 };
+  c["9,1"] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,2"] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,3"] = { value: "复核员", ...sigHeaderStyle, colSpan: 4 };
+  c["9,4"] = { value: "", merged: true, mergeParent: "9,3" };
+  c["9,5"] = { value: "", merged: true, mergeParent: "9,3" };
+  c["9,6"] = { value: "", merged: true, mergeParent: "9,3" };
+  c["9,7"] = { value: "仓库主管", ...sigHeaderStyle, colSpan: 3 };
+  c["9,8"] = { value: "", merged: true, mergeParent: "9,7" };
+  c["9,9"] = { value: "", merged: true, mergeParent: "9,7" };
+
+  c["10,0"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 2 };
+  c["10,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,2"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,0"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["11,2"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,3"] = { value: "", ...sigEmptyStyle, colSpan: 4, rowSpan: 2 };
+  c["10,4"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["10,5"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["10,6"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["11,3"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["11,4"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["11,5"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["11,6"] = { value: "", merged: true, mergeParent: "10,3" };
+  c["10,7"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 2 };
+  c["10,8"] = { value: "", merged: true, mergeParent: "10,7" };
+  c["10,9"] = { value: "", merged: true, mergeParent: "10,7" };
+  c["11,7"] = { value: "", merged: true, mergeParent: "10,7" };
+  c["11,8"] = { value: "", merged: true, mergeParent: "10,7" };
+  c["11,9"] = { value: "", merged: true, mergeParent: "10,7" };
+
+  c["12,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,0" };
+
+  return data;
+}
+
+// ==================== IPQC 巡检单 ====================
+function createIpqcInspectionTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(22, 8);
+  data.colWidths = [40, 120, 120, 120, 120, 80, 60, 100];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 6, 24, 24, 24, 6, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#e8eaf6", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  c["0,0"] = { value: "IPQC 巡 检 记 录 单", bold: true, fontSize: 14, textAlign: "center", verticalAlign: "middle", colSpan: 8, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "In-Process Quality Control Inspection Record", bold: false, fontSize: 9, textAlign: "center", colSpan: 8, ...noBorder, color: "#6b7280", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "记录单号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${inspectionNo}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "生产工单：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${productionOrderNo}", ...infoStyle, colSpan: 2 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "产品名称：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${productName}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "巡检工序：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${processName}", ...infoStyle, colSpan: 2 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "巡检时间：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,1"] = { value: "", merged: true, mergeParent: "5,0" };
+  c["5,2"] = { value: "${inspectionTime}", ...infoStyle, colSpan: 2 };
+  c["5,3"] = { value: "", merged: true, mergeParent: "5,2" };
+  c["5,4"] = { value: "检验员：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,5"] = { value: "", merged: true, mergeParent: "5,4" };
+  c["5,6"] = { value: "${inspectorName}", ...infoStyle, colSpan: 2 };
+  c["5,7"] = { value: "", merged: true, mergeParent: "5,6" };
+
+  c["6,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`6,${i}`] = { value: "", merged: true, mergeParent: "6,0" };
+
+  c["7,0"] = { value: "序号", ...headerStyle };
+  c["7,1"] = { value: "检验项目", ...headerStyle, colSpan: 2 };
+  c["7,2"] = { value: "", merged: true, mergeParent: "7,1" };
+  c["7,3"] = { value: "检验标准", ...headerStyle, colSpan: 2 };
+  c["7,4"] = { value: "", merged: true, mergeParent: "7,3" };
+  c["7,5"] = { value: "检验结果", ...headerStyle };
+  c["7,6"] = { value: "判定", ...headerStyle };
+  c["7,7"] = { value: "备注", ...headerStyle };
+
+  c["8,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["8,1"] = { value: "${items.itemName}", ...bodyStyle, textAlign: "left", colSpan: 2 };
+  c["8,2"] = { value: "", merged: true, mergeParent: "8,1" };
+  c["8,3"] = { value: "${items.standard}", ...bodyStyle, textAlign: "left", colSpan: 2 };
+  c["8,4"] = { value: "", merged: true, mergeParent: "8,3" };
+  c["8,5"] = { value: "${items.result}", ...bodyStyle };
+  c["8,6"] = { value: "${items.judgment}", ...bodyStyle };
+  c["8,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["9,0"] = { value: "检验结论：", bold: true, ...{ ...solidBorder, bgColor: "#f0f0f0" }, fontSize: 9, colSpan: 2, textAlign: "right" };
+  c["9,1"] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,2"] = { value: "${finalJudgment}", ...solidBorder, fontSize: 9, colSpan: 6 };
+  for (let i = 3; i < 8; i++) c[`9,${i}`] = { value: "", merged: true, mergeParent: "9,2" };
+
+  c["10,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["11,0"] = { value: "检验员", ...sigHeaderStyle, colSpan: 4 };
+  c["11,1"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["11,2"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["11,3"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["11,4"] = { value: "班组长确认", ...sigHeaderStyle, colSpan: 4 };
+  c["11,5"] = { value: "", merged: true, mergeParent: "11,4" };
+  c["11,6"] = { value: "", merged: true, mergeParent: "11,4" };
+  c["11,7"] = { value: "", merged: true, mergeParent: "11,4" };
+
+  c["12,0"] = { value: "", ...sigEmptyStyle, colSpan: 4, rowSpan: 2 };
+  c["12,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,2"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,3"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,0"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,2"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,3"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,4"] = { value: "", ...sigEmptyStyle, colSpan: 4, rowSpan: 2 };
+  c["12,5"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["12,6"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["12,7"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["13,4"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["13,5"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["13,6"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["13,7"] = { value: "", merged: true, mergeParent: "12,4" };
+
+  c["14,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`14,${i}`] = { value: "", merged: true, mergeParent: "14,0" };
+
+  return data;
+}
+
+// ==================== OQC 成品检验单 ====================
+function createOqcInspectionTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(24, 8);
+  data.colWidths = [40, 120, 120, 120, 120, 80, 60, 100];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 6, 24, 24, 24, 6, 24, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#e8f5e9", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  c["0,0"] = { value: "OQC 成 品 检 验 报 告", bold: true, fontSize: 14, textAlign: "center", verticalAlign: "middle", colSpan: 8, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "Outgoing Quality Control Inspection Report", bold: false, fontSize: 9, textAlign: "center", colSpan: 8, ...noBorder, color: "#6b7280", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "报告编号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${inspectionNo}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "生产工单：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${productionOrderNo}", ...infoStyle, colSpan: 2 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "产品名称：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${productName}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "产品批号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${batchNo}", ...infoStyle, colSpan: 2 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "检验日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,1"] = { value: "", merged: true, mergeParent: "5,0" };
+  c["5,2"] = { value: "${inspectionDate}", ...infoStyle, colSpan: 2 };
+  c["5,3"] = { value: "", merged: true, mergeParent: "5,2" };
+  c["5,4"] = { value: "抽检数量：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,5"] = { value: "", merged: true, mergeParent: "5,4" };
+  c["5,6"] = { value: "${sampleQuantity}", ...infoStyle, colSpan: 2 };
+  c["5,7"] = { value: "", merged: true, mergeParent: "5,6" };
+
+  c["6,0"] = { value: "检验员：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["6,1"] = { value: "", merged: true, mergeParent: "6,0" };
+  c["6,2"] = { value: "${inspectorName}", ...infoStyle, colSpan: 2 };
+  c["6,3"] = { value: "", merged: true, mergeParent: "6,2" };
+  c["6,4"] = { value: "订单数量：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["6,5"] = { value: "", merged: true, mergeParent: "6,4" };
+  c["6,6"] = { value: "${orderQuantity}", ...infoStyle, colSpan: 2 };
+  c["6,7"] = { value: "", merged: true, mergeParent: "6,6" };
+
+  c["7,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`7,${i}`] = { value: "", merged: true, mergeParent: "7,0" };
+
+  c["8,0"] = { value: "序号", ...headerStyle };
+  c["8,1"] = { value: "检验项目", ...headerStyle, colSpan: 2 };
+  c["8,2"] = { value: "", merged: true, mergeParent: "8,1" };
+  c["8,3"] = { value: "检验标准", ...headerStyle, colSpan: 2 };
+  c["8,4"] = { value: "", merged: true, mergeParent: "8,3" };
+  c["8,5"] = { value: "检验结果", ...headerStyle };
+  c["8,6"] = { value: "判定", ...headerStyle };
+  c["8,7"] = { value: "备注", ...headerStyle };
+
+  c["9,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["9,1"] = { value: "${items.itemName}", ...bodyStyle, textAlign: "left", colSpan: 2 };
+  c["9,2"] = { value: "", merged: true, mergeParent: "9,1" };
+  c["9,3"] = { value: "${items.standard}", ...bodyStyle, textAlign: "left", colSpan: 2 };
+  c["9,4"] = { value: "", merged: true, mergeParent: "9,3" };
+  c["9,5"] = { value: "${items.result}", ...bodyStyle };
+  c["9,6"] = { value: "${items.judgment}", ...bodyStyle };
+  c["9,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["10,0"] = { value: "检验结论：", bold: true, ...{ ...solidBorder, bgColor: "#f0f0f0" }, fontSize: 9, colSpan: 2, textAlign: "right" };
+  c["10,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,2"] = { value: "${finalJudgment}", ...solidBorder, fontSize: 9, colSpan: 6 };
+  for (let i = 3; i < 8; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,2" };
+
+  c["11,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`11,${i}`] = { value: "", merged: true, mergeParent: "11,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["12,0"] = { value: "检验员", ...sigHeaderStyle, colSpan: 4 };
+  c["12,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,2"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,3"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,4"] = { value: "审核人", ...sigHeaderStyle, colSpan: 4 };
+  c["12,5"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["12,6"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["12,7"] = { value: "", merged: true, mergeParent: "12,4" };
+
+  c["13,0"] = { value: "", ...sigEmptyStyle, colSpan: 4, rowSpan: 2 };
+  c["13,1"] = { value: "", merged: true, mergeParent: "13,0" };
+  c["13,2"] = { value: "", merged: true, mergeParent: "13,0" };
+  c["13,3"] = { value: "", merged: true, mergeParent: "13,0" };
+  c["14,0"] = { value: "", merged: true, mergeParent: "13,0" };
+  c["14,1"] = { value: "", merged: true, mergeParent: "13,0" };
+  c["14,2"] = { value: "", merged: true, mergeParent: "13,0" };
+  c["14,3"] = { value: "", merged: true, mergeParent: "13,0" };
+  c["13,4"] = { value: "", ...sigEmptyStyle, colSpan: 4, rowSpan: 2 };
+  c["13,5"] = { value: "", merged: true, mergeParent: "13,4" };
+  c["13,6"] = { value: "", merged: true, mergeParent: "13,4" };
+  c["13,7"] = { value: "", merged: true, mergeParent: "13,4" };
+  c["14,4"] = { value: "", merged: true, mergeParent: "13,4" };
+  c["14,5"] = { value: "", merged: true, mergeParent: "13,4" };
+  c["14,6"] = { value: "", merged: true, mergeParent: "13,4" };
+  c["14,7"] = { value: "", merged: true, mergeParent: "13,4" };
+
+  c["15,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`15,${i}`] = { value: "", merged: true, mergeParent: "15,0" };
+
+  return data;
+}
+
+// ==================== 生产流转卡 ====================
+function createProductionFlowCardTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(22, 8);
+  data.colWidths = [40, 120, 100, 120, 120, 70, 70, 70];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 24, 6, 24, 24, 24, 6, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#fff8e1", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  c["0,0"] = { value: "生 产 流 转 卡", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 8, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "PRODUCTION ROUTING CARD", bold: false, fontSize: 9, textAlign: "center", colSpan: 8, ...noBorder, color: "#6b7280", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "流转卡号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${cardNo}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "生产订单号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${productionOrderNo}", ...infoStyle, colSpan: 2 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "产品名称：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${productName}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "产品批号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${batchNo}", ...infoStyle, colSpan: 2 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "生产数量：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,1"] = { value: "", merged: true, mergeParent: "5,0" };
+  c["5,2"] = { value: "${quantity} ${unit}", ...infoStyle, colSpan: 2 };
+  c["5,3"] = { value: "", merged: true, mergeParent: "5,2" };
+  c["5,4"] = { value: "状态：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,5"] = { value: "", merged: true, mergeParent: "5,4" };
+  c["5,6"] = { value: "${status}", ...infoStyle, colSpan: 2 };
+  c["5,7"] = { value: "", merged: true, mergeParent: "5,6" };
+
+  c["6,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`6,${i}`] = { value: "", merged: true, mergeParent: "6,0" };
+
+  c["7,0"] = { value: "序号", ...headerStyle };
+  c["7,1"] = { value: "工序名称", ...headerStyle };
+  c["7,2"] = { value: "操作人员", ...headerStyle };
+  c["7,3"] = { value: "开始时间", ...headerStyle };
+  c["7,4"] = { value: "结束时间", ...headerStyle };
+  c["7,5"] = { value: "合格数量", ...headerStyle };
+  c["7,6"] = { value: "不合格数量", ...headerStyle };
+  c["7,7"] = { value: "检验员", ...headerStyle };
+
+  c["8,0"] = { value: "{{#each processHistory}}{{@number}}", ...bodyStyle };
+  c["8,1"] = { value: "${processHistory.processName}", ...bodyStyle, textAlign: "left" };
+  c["8,2"] = { value: "${processHistory.operator}", ...bodyStyle };
+  c["8,3"] = { value: "${processHistory.startTime}", ...bodyStyle };
+  c["8,4"] = { value: "${processHistory.endTime}", ...bodyStyle };
+  c["8,5"] = { value: "${processHistory.qualifiedQty}", ...bodyStyle };
+  c["8,6"] = { value: "${processHistory.unqualifiedQty}", ...bodyStyle };
+  c["8,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["9,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`9,${i}`] = { value: "", merged: true, mergeParent: "9,0" };
+
+  c["10,0"] = { value: "备注：", bold: true, fontSize: 9, colSpan: 2, ...noBorder };
+  c["10,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,2"] = { value: "${remark}", fontSize: 9, colSpan: 6, ...noBorder };
+  for (let i = 3; i < 8; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,2" };
+
+  c["11,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`11,${i}`] = { value: "", merged: true, mergeParent: "11,0" };
+
+  return data;
+}
+
+// ==================== 费用报销单 ====================
+function createExpenseClaimTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(22, 8);
+  data.colWidths = [100, 80, 200, 80, 60, 80, 80, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 6, 24, 24, 24, 6, 24, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#fce4ec", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  c["0,0"] = { value: "费 用 报 销 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 8, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "EXPENSE REIMBURSEMENT FORM", bold: false, fontSize: 9, textAlign: "center", colSpan: 8, ...noBorder, color: "#6b7280", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "报销部门：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${department}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "报销人：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${applicantName}", ...infoStyle, colSpan: 2 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "单据号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${reimbursementNo}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "报销日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${applyDate}", ...infoStyle, colSpan: 2 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`5,${i}`] = { value: "", merged: true, mergeParent: "5,0" };
+
+  c["6,0"] = { value: "费用发生日期", ...headerStyle };
+  c["6,1"] = { value: "费用类别", ...headerStyle };
+  c["6,2"] = { value: "费用说明", ...headerStyle, colSpan: 3 };
+  c["6,3"] = { value: "", merged: true, mergeParent: "6,2" };
+  c["6,4"] = { value: "", merged: true, mergeParent: "6,2" };
+  c["6,5"] = { value: "金额（元）", ...headerStyle };
+  c["6,6"] = { value: "单据张数", ...headerStyle };
+  c["6,7"] = { value: "备注", ...headerStyle };
+
+  c["7,0"] = { value: "{{#each lines}}${lines.expenseDate}", ...bodyStyle };
+  c["7,1"] = { value: "${lines.expenseType}", ...bodyStyle };
+  c["7,2"] = { value: "${lines.remark}", ...bodyStyle, textAlign: "left", colSpan: 3 };
+  c["7,3"] = { value: "", merged: true, mergeParent: "7,2" };
+  c["7,4"] = { value: "", merged: true, mergeParent: "7,2" };
+  c["7,5"] = { value: "${lines.amount}", ...bodyStyle };
+  c["7,6"] = { value: "${lines.attachmentCount}", ...bodyStyle };
+  c["7,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  // 合计行
+  c["8,0"] = { value: "合计金额（小写）：", bold: true, ...solidBorder, fontSize: 9, textAlign: "right", colSpan: 5, bgColor: "#f5f5f5" };
+  c["8,1"] = { value: "", merged: true, mergeParent: "8,0" };
+  c["8,2"] = { value: "", merged: true, mergeParent: "8,0" };
+  c["8,3"] = { value: "", merged: true, mergeParent: "8,0" };
+  c["8,4"] = { value: "", merged: true, mergeParent: "8,0" };
+  c["8,5"] = { value: "${totalAmount | currency}", bold: true, ...solidBorder, fontSize: 9 };
+  c["8,6"] = { value: "${totalAttachmentCount}", bold: true, ...solidBorder, fontSize: 9 };
+  c["8,7"] = { value: "", ...solidBorder, fontSize: 9 };
+
+  c["9,0"] = { value: "合计金额（大写）：", bold: true, ...solidBorder, fontSize: 9, textAlign: "right", colSpan: 2, bgColor: "#f5f5f5" };
+  c["9,1"] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,2"] = { value: "${totalAmountInWords}", bold: true, ...solidBorder, fontSize: 9, colSpan: 6 };
+  for (let i = 3; i < 8; i++) c[`9,${i}`] = { value: "", merged: true, mergeParent: "9,2" };
+
+  c["10,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,0" };
+
+  // 审批区
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+
+  c["11,0"] = { value: "部门主管", ...sigHeaderStyle, colSpan: 2 };
+  c["11,1"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["11,2"] = { value: "财务审核", ...sigHeaderStyle, colSpan: 2 };
+  c["11,3"] = { value: "", merged: true, mergeParent: "11,2" };
+  c["11,4"] = { value: "总经理", ...sigHeaderStyle, colSpan: 2 };
+  c["11,5"] = { value: "", merged: true, mergeParent: "11,4" };
+  c["11,6"] = { value: "出纳", ...sigHeaderStyle };
+  c["11,7"] = { value: "领款人", ...sigHeaderStyle };
+
+  c["12,0"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["12,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,0"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,2"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["12,3"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["13,2"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["13,3"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["12,4"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["12,5"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["13,4"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["13,5"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["12,6"] = { value: "", ...sigEmptyStyle, rowSpan: 2 };
+  c["13,6"] = { value: "", merged: true, mergeParent: "12,6" };
+  c["12,7"] = { value: "", ...sigEmptyStyle, rowSpan: 2 };
+  c["13,7"] = { value: "", merged: true, mergeParent: "12,7" };
+
+  c["14,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`14,${i}`] = { value: "", merged: true, mergeParent: "14,0" };
+
+  return data;
+}
+
+// ==================== 请假申请单（内部，仅商标+版本号）====================
+function createLeaveRequestTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(18, 6);
+  data.colWidths = [100, 120, 80, 100, 120, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 24, 24, 6, 60, 6, 24, 24, 24, 6, 24, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...solidBorder };
+  const labelStyle = { bold: true, fontSize: 9, bgColor: "#f5f5f5", ...solidBorder };
+
+  // 内部单据：只显示商标和版本号，不显示公司联系方式
+  c["0,0"] = { value: "请 假 申 请 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 6, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 6; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "版本号：${company.version || 'V1.0'}  内部文件", bold: false, fontSize: 9, textAlign: "right", colSpan: 6, ...noBorder, color: "#6b7280", borderBottom: "1px solid #ccc" };
+  for (let i = 1; i < 6; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "申请单号", ...labelStyle };
+  c["3,1"] = { value: "${requestNo}", ...infoStyle, colSpan: 2 };
+  c["3,2"] = { value: "", merged: true, mergeParent: "3,1" };
+  c["3,3"] = { value: "申请日期", ...labelStyle };
+  c["3,4"] = { value: "${applyDate}", ...infoStyle, colSpan: 2 };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+
+  c["4,0"] = { value: "申请人", ...labelStyle };
+  c["4,1"] = { value: "${applicantName}", ...infoStyle, colSpan: 2 };
+  c["4,2"] = { value: "", merged: true, mergeParent: "4,1" };
+  c["4,3"] = { value: "所在部门", ...labelStyle };
+  c["4,4"] = { value: "${department}", ...infoStyle, colSpan: 2 };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+
+  c["5,0"] = { value: "请假类型", ...labelStyle };
+  c["5,1"] = { value: "${leaveType}", ...infoStyle, colSpan: 2 };
+  c["5,2"] = { value: "", merged: true, mergeParent: "5,1" };
+  c["5,3"] = { value: "请假天数", ...labelStyle };
+  c["5,4"] = { value: "${days} 天", ...infoStyle, colSpan: 2 };
+  c["5,5"] = { value: "", merged: true, mergeParent: "5,4" };
+
+  c["6,0"] = { value: "开始时间", ...labelStyle };
+  c["6,1"] = { value: "${startTime}", ...infoStyle, colSpan: 2 };
+  c["6,2"] = { value: "", merged: true, mergeParent: "6,1" };
+  c["6,3"] = { value: "结束时间", ...labelStyle };
+  c["6,4"] = { value: "${endTime}", ...infoStyle, colSpan: 2 };
+  c["6,5"] = { value: "", merged: true, mergeParent: "6,4" };
+
+  c["7,0"] = { value: "代理人", ...labelStyle };
+  c["7,1"] = { value: "${agentName}", ...infoStyle, colSpan: 2 };
+  c["7,2"] = { value: "", merged: true, mergeParent: "7,1" };
+  c["7,3"] = { value: "联系电话", ...labelStyle };
+  c["7,4"] = { value: "${contactPhone}", ...infoStyle, colSpan: 2 };
+  c["7,5"] = { value: "", merged: true, mergeParent: "7,4" };
+
+  c["8,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,0" };
+
+  c["9,0"] = { value: "请假事由", ...labelStyle };
+  c["9,1"] = { value: "${reason}", ...infoStyle, colSpan: 5, verticalAlign: "top" };
+  for (let i = 2; i < 6; i++) c[`9,${i}`] = { value: "", merged: true, mergeParent: "9,1" };
+
+  c["10,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["11,0"] = { value: "申请人", ...sigHeaderStyle, colSpan: 2 };
+  c["11,1"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["11,2"] = { value: "部门主管", ...sigHeaderStyle, colSpan: 2 };
+  c["11,3"] = { value: "", merged: true, mergeParent: "11,2" };
+  c["11,4"] = { value: "人事部", ...sigHeaderStyle };
+  c["11,5"] = { value: "总经理", ...sigHeaderStyle };
+
+  c["12,0"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["12,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,0"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,2"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["12,3"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["13,2"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["13,3"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["12,4"] = { value: "", ...sigEmptyStyle, rowSpan: 2 };
+  c["13,4"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["12,5"] = { value: "", ...sigEmptyStyle, rowSpan: 2 };
+  c["13,5"] = { value: "", merged: true, mergeParent: "12,5" };
+
+  c["14,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`14,${i}`] = { value: "", merged: true, mergeParent: "14,0" };
+
+  return data;
+}
+
+// ==================== 加班申请单（内部）====================
+function createOvertimeRequestTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(16, 6);
+  data.colWidths = [100, 120, 80, 100, 120, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 24, 24, 6, 60, 6, 24, 24, 24, 6, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...solidBorder };
+  const labelStyle = { bold: true, fontSize: 9, bgColor: "#f5f5f5", ...solidBorder };
+
+  c["0,0"] = { value: "加 班 申 请 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 6, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 6; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "版本号：${company.version || 'V1.0'}  内部文件", bold: false, fontSize: 9, textAlign: "right", colSpan: 6, ...noBorder, color: "#6b7280", borderBottom: "1px solid #ccc" };
+  for (let i = 1; i < 6; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "申请单号", ...labelStyle };
+  c["3,1"] = { value: "${requestNo}", ...infoStyle, colSpan: 2 };
+  c["3,2"] = { value: "", merged: true, mergeParent: "3,1" };
+  c["3,3"] = { value: "申请日期", ...labelStyle };
+  c["3,4"] = { value: "${applyDate}", ...infoStyle, colSpan: 2 };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+
+  c["4,0"] = { value: "申请人", ...labelStyle };
+  c["4,1"] = { value: "${applicantName}", ...infoStyle, colSpan: 2 };
+  c["4,2"] = { value: "", merged: true, mergeParent: "4,1" };
+  c["4,3"] = { value: "所在部门", ...labelStyle };
+  c["4,4"] = { value: "${department}", ...infoStyle, colSpan: 2 };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+
+  c["5,0"] = { value: "加班类型", ...labelStyle };
+  c["5,1"] = { value: "${overtimeType}", ...infoStyle, colSpan: 2 };
+  c["5,2"] = { value: "", merged: true, mergeParent: "5,1" };
+  c["5,3"] = { value: "加班时长", ...labelStyle };
+  c["5,4"] = { value: "${hours} 小时", ...infoStyle, colSpan: 2 };
+  c["5,5"] = { value: "", merged: true, mergeParent: "5,4" };
+
+  c["6,0"] = { value: "加班日期", ...labelStyle };
+  c["6,1"] = { value: "${overtimeDate}", ...infoStyle, colSpan: 2 };
+  c["6,2"] = { value: "", merged: true, mergeParent: "6,1" };
+  c["6,3"] = { value: "加班时间", ...labelStyle };
+  c["6,4"] = { value: "${startTime} - ${endTime}", ...infoStyle, colSpan: 2 };
+  c["6,5"] = { value: "", merged: true, mergeParent: "6,4" };
+
+  c["7,0"] = { value: "加班人员", ...labelStyle };
+  c["7,1"] = { value: "${participants}", ...infoStyle, colSpan: 5 };
+  for (let i = 2; i < 6; i++) c[`7,${i}`] = { value: "", merged: true, mergeParent: "7,1" };
+
+  c["8,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,0" };
+
+  c["9,0"] = { value: "加班事由", ...labelStyle };
+  c["9,1"] = { value: "${reason}", ...infoStyle, colSpan: 5, verticalAlign: "top" };
+  for (let i = 2; i < 6; i++) c[`9,${i}`] = { value: "", merged: true, mergeParent: "9,1" };
+
+  c["10,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["11,0"] = { value: "申请人", ...sigHeaderStyle, colSpan: 2 };
+  c["11,1"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["11,2"] = { value: "部门主管", ...sigHeaderStyle, colSpan: 2 };
+  c["11,3"] = { value: "", merged: true, mergeParent: "11,2" };
+  c["11,4"] = { value: "人事部", ...sigHeaderStyle };
+  c["11,5"] = { value: "总经理", ...sigHeaderStyle };
+
+  c["12,0"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["12,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,0"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["13,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,2"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["12,3"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["13,2"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["13,3"] = { value: "", merged: true, mergeParent: "12,2" };
+  c["12,4"] = { value: "", ...sigEmptyStyle, rowSpan: 2 };
+  c["13,4"] = { value: "", merged: true, mergeParent: "12,4" };
+  c["12,5"] = { value: "", ...sigEmptyStyle, rowSpan: 2 };
+  c["13,5"] = { value: "", merged: true, mergeParent: "12,5" };
+
+  c["14,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`14,${i}`] = { value: "", merged: true, mergeParent: "14,0" };
+
+  return data;
+}
+
+// ==================== 外出申请单（内部）====================
+function createOutingRequestTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(16, 6);
+  data.colWidths = [100, 120, 80, 100, 120, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 24, 6, 60, 6, 24, 24, 24, 6, 24, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...solidBorder };
+  const labelStyle = { bold: true, fontSize: 9, bgColor: "#f5f5f5", ...solidBorder };
+
+  c["0,0"] = { value: "公 出 申 请 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 6, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 6; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "版本号：${company.version || 'V1.0'}  内部文件", bold: false, fontSize: 9, textAlign: "right", colSpan: 6, ...noBorder, color: "#6b7280", borderBottom: "1px solid #ccc" };
+  for (let i = 1; i < 6; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "申请单号", ...labelStyle };
+  c["3,1"] = { value: "${requestNo}", ...infoStyle, colSpan: 2 };
+  c["3,2"] = { value: "", merged: true, mergeParent: "3,1" };
+  c["3,3"] = { value: "申请日期", ...labelStyle };
+  c["3,4"] = { value: "${applyDate}", ...infoStyle, colSpan: 2 };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+
+  c["4,0"] = { value: "申请人", ...labelStyle };
+  c["4,1"] = { value: "${applicantName}", ...infoStyle, colSpan: 2 };
+  c["4,2"] = { value: "", merged: true, mergeParent: "4,1" };
+  c["4,3"] = { value: "所在部门", ...labelStyle };
+  c["4,4"] = { value: "${department}", ...infoStyle, colSpan: 2 };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+
+  c["5,0"] = { value: "外出地点", ...labelStyle };
+  c["5,1"] = { value: "${destination}", ...infoStyle, colSpan: 5 };
+  for (let i = 2; i < 6; i++) c[`5,${i}`] = { value: "", merged: true, mergeParent: "5,1" };
+
+  c["6,0"] = { value: "开始时间", ...labelStyle };
+  c["6,1"] = { value: "${startTime}", ...infoStyle, colSpan: 2 };
+  c["6,2"] = { value: "", merged: true, mergeParent: "6,1" };
+  c["6,3"] = { value: "结束时间", ...labelStyle };
+  c["6,4"] = { value: "${endTime}", ...infoStyle, colSpan: 2 };
+  c["6,5"] = { value: "", merged: true, mergeParent: "6,4" };
+
+  c["7,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`7,${i}`] = { value: "", merged: true, mergeParent: "7,0" };
+
+  c["8,0"] = { value: "外出事由", ...labelStyle };
+  c["8,1"] = { value: "${reason}", ...infoStyle, colSpan: 5, verticalAlign: "top" };
+  for (let i = 2; i < 6; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,1" };
+
+  c["9,0"] = { value: "", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`9,${i}`] = { value: "", merged: true, mergeParent: "9,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["10,0"] = { value: "申请人", ...sigHeaderStyle, colSpan: 2 };
+  c["10,1"] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,2"] = { value: "部门主管", ...sigHeaderStyle, colSpan: 2 };
+  c["10,3"] = { value: "", merged: true, mergeParent: "10,2" };
+  c["10,4"] = { value: "行政部", ...sigHeaderStyle };
+  c["10,5"] = { value: "总经理", ...sigHeaderStyle };
+
+  c["11,0"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["11,1"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["12,0"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["12,1"] = { value: "", merged: true, mergeParent: "11,0" };
+  c["11,2"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["11,3"] = { value: "", merged: true, mergeParent: "11,2" };
+  c["12,2"] = { value: "", merged: true, mergeParent: "11,2" };
+  c["12,3"] = { value: "", merged: true, mergeParent: "11,2" };
+  c["11,4"] = { value: "", ...sigEmptyStyle, rowSpan: 2 };
+  c["12,4"] = { value: "", merged: true, mergeParent: "11,4" };
+  c["11,5"] = { value: "", ...sigEmptyStyle, rowSpan: 2 };
+  c["12,5"] = { value: "", merged: true, mergeParent: "11,5" };
+
+  c["13,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 6, ...noBorder };
+  for (let i = 1; i < 6; i++) c[`13,${i}`] = { value: "", merged: true, mergeParent: "13,0" };
+
+  return data;
+}
+
+// ==================== 委外灭菌单（内部）====================
+function createSterilizationOutsourceTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(20, 8);
+  data.colWidths = [100, 120, 80, 100, 120, 80, 80, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 24, 24, 6, 24, 24, 24, 24, 24, 6, 24, 24, 24, 6, 24];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...solidBorder };
+  const labelStyle = { bold: true, fontSize: 9, bgColor: "#f5f5f5", ...solidBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#e0f7fa", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  c["0,0"] = { value: "委 外 灭 菌 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 8, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+  c["1,0"] = { value: "版本号：${company.version || 'V1.0'}  内部文件", bold: false, fontSize: 9, textAlign: "right", colSpan: 8, ...noBorder, color: "#6b7280", borderBottom: "1px solid #ccc" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  c["3,0"] = { value: "单据编号", ...labelStyle };
+  c["3,1"] = { value: "${orderNo}", ...infoStyle, colSpan: 3 };
+  c["3,2"] = { value: "", merged: true, mergeParent: "3,1" };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,1" };
+  c["3,4"] = { value: "灭菌方式", ...labelStyle };
+  c["3,5"] = { value: "${sterilizationMethod}", ...infoStyle, colSpan: 3 };
+  c["3,6"] = { value: "", merged: true, mergeParent: "3,5" };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,5" };
+
+  c["4,0"] = { value: "供应商", ...labelStyle };
+  c["4,1"] = { value: "${supplierName}", ...infoStyle, colSpan: 3 };
+  c["4,2"] = { value: "", merged: true, mergeParent: "4,1" };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,1" };
+  c["4,4"] = { value: "灭菌批号", ...labelStyle };
+  c["4,5"] = { value: "${sterilizationBatchNo}", ...infoStyle, colSpan: 3 };
+  c["4,6"] = { value: "", merged: true, mergeParent: "4,5" };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,5" };
+
+  c["5,0"] = { value: "发出日期", ...labelStyle };
+  c["5,1"] = { value: "${sendDate}", ...infoStyle, colSpan: 3 };
+  c["5,2"] = { value: "", merged: true, mergeParent: "5,1" };
+  c["5,3"] = { value: "", merged: true, mergeParent: "5,1" };
+  c["5,4"] = { value: "预计返回日期", ...labelStyle };
+  c["5,5"] = { value: "${expectedReturnDate}", ...infoStyle, colSpan: 3 };
+  c["5,6"] = { value: "", merged: true, mergeParent: "5,5" };
+  c["5,7"] = { value: "", merged: true, mergeParent: "5,5" };
+
+  c["6,0"] = { value: "实际返回日期", ...labelStyle };
+  c["6,1"] = { value: "${actualReturnDate}", ...infoStyle, colSpan: 3 };
+  c["6,2"] = { value: "", merged: true, mergeParent: "6,1" };
+  c["6,3"] = { value: "", merged: true, mergeParent: "6,1" };
+  c["6,4"] = { value: "关联流转卡", ...labelStyle };
+  c["6,5"] = { value: "${routingCardNo}", ...infoStyle, colSpan: 3 };
+  c["6,6"] = { value: "", merged: true, mergeParent: "6,5" };
+  c["6,7"] = { value: "", merged: true, mergeParent: "6,5" };
+
+  c["7,0"] = { value: "产品名称", ...labelStyle };
+  c["7,1"] = { value: "${productName}", ...infoStyle, colSpan: 3 };
+  c["7,2"] = { value: "", merged: true, mergeParent: "7,1" };
+  c["7,3"] = { value: "", merged: true, mergeParent: "7,1" };
+  c["7,4"] = { value: "产品批号", ...labelStyle };
+  c["7,5"] = { value: "${batchNo}", ...infoStyle, colSpan: 3 };
+  c["7,6"] = { value: "", merged: true, mergeParent: "7,5" };
+  c["7,7"] = { value: "", merged: true, mergeParent: "7,5" };
+
+  c["8,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,0" };
+
+  c["9,0"] = { value: "序号", ...headerStyle };
+  c["9,1"] = { value: "物料/产品名称", ...headerStyle, colSpan: 2 };
+  c["9,2"] = { value: "", merged: true, mergeParent: "9,1" };
+  c["9,3"] = { value: "规格型号", ...headerStyle };
+  c["9,4"] = { value: "批号", ...headerStyle };
+  c["9,5"] = { value: "数量", ...headerStyle };
+  c["9,6"] = { value: "单位", ...headerStyle };
+  c["9,7"] = { value: "备注", ...headerStyle };
+
+  c["10,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["10,1"] = { value: "${items.materialName}", ...bodyStyle, textAlign: "left", colSpan: 2 };
+  c["10,2"] = { value: "", merged: true, mergeParent: "10,1" };
+  c["10,3"] = { value: "${items.specification}", ...bodyStyle };
+  c["10,4"] = { value: "${items.batchNo}", ...bodyStyle };
+  c["10,5"] = { value: "${items.quantity}", ...bodyStyle };
+  c["10,6"] = { value: "${items.unit}", ...bodyStyle };
+  c["10,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["11,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`11,${i}`] = { value: "", merged: true, mergeParent: "11,0" };
+
+  c["12,0"] = { value: "备注：", bold: true, fontSize: 9, colSpan: 2, ...noBorder };
+  c["12,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,2"] = { value: "${remark}", fontSize: 9, colSpan: 6, ...noBorder };
+  for (let i = 3; i < 8; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,2" };
+
+  c["13,0"] = { value: "", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`13,${i}`] = { value: "", merged: true, mergeParent: "13,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["14,0"] = { value: "制单人", ...sigHeaderStyle, colSpan: 3 };
+  c["14,1"] = { value: "", merged: true, mergeParent: "14,0" };
+  c["14,2"] = { value: "", merged: true, mergeParent: "14,0" };
+  c["14,3"] = { value: "QA确认", ...sigHeaderStyle, colSpan: 2 };
+  c["14,4"] = { value: "", merged: true, mergeParent: "14,3" };
+  c["14,5"] = { value: "供应商确认", ...sigHeaderStyle, colSpan: 3 };
+  c["14,6"] = { value: "", merged: true, mergeParent: "14,5" };
+  c["14,7"] = { value: "", merged: true, mergeParent: "14,5" };
+
+  c["15,0"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 2 };
+  c["15,1"] = { value: "", merged: true, mergeParent: "15,0" };
+  c["15,2"] = { value: "", merged: true, mergeParent: "15,0" };
+  c["16,0"] = { value: "", merged: true, mergeParent: "15,0" };
+  c["16,1"] = { value: "", merged: true, mergeParent: "15,0" };
+  c["16,2"] = { value: "", merged: true, mergeParent: "15,0" };
+  c["15,3"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["15,4"] = { value: "", merged: true, mergeParent: "15,3" };
+  c["16,3"] = { value: "", merged: true, mergeParent: "15,3" };
+  c["16,4"] = { value: "", merged: true, mergeParent: "15,3" };
+  c["15,5"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 2 };
+  c["15,6"] = { value: "", merged: true, mergeParent: "15,5" };
+  c["15,7"] = { value: "", merged: true, mergeParent: "15,5" };
+  c["16,5"] = { value: "", merged: true, mergeParent: "15,5" };
+  c["16,6"] = { value: "", merged: true, mergeParent: "15,5" };
+  c["16,7"] = { value: "", merged: true, mergeParent: "15,5" };
+
+  c["17,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 8, ...noBorder };
+  for (let i = 1; i < 8; i++) c[`17,${i}`] = { value: "", merged: true, mergeParent: "17,0" };
+
+  return data;
+}
+
+// ==================== 报关单（横版，对外，带抬头和联系方式）====================
+function createCustomsDeclarationTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(28, 10);
+  data.orientation = "landscape";
+  data.paperSize = "A4";
+  data.marginTop = 10;
+  data.marginRight = 8;
+  data.marginBottom = 10;
+  data.marginLeft = 8;
+  data.colWidths = [50, 100, 80, 80, 80, 80, 80, 80, 80
+, 80, 80];
+  data.rowHeights = [40, 32, 8, 28, 28, 28, 28, 8, 28, 28, 28, 28, 28, 8, 28, 28, 8, 28, 28, 28, 8, 28, 28, 28, 8, 28, 28, 28];
+
+  const c = data.cells;
+  const noBorder = { borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  const solidBorder = { borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  const infoStyle = { fontSize: 9, ...noBorder };
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#e3f2fd", ...solidBorder };
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, ...solidBorder };
+
+  // 抬头：公司名称 + 联系方式（对外文件）
+  c["0,0"] = { value: "${company.name}", bold: true, fontSize: 18, textAlign: "center", verticalAlign: "middle", colSpan: 10, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 10; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+
+  c["1,0"] = { value: "地址：${company.address}  |  电话：${company.phone}  |  邮箱：${company.email}", fontSize: 9, textAlign: "center", colSpan: 10, ...noBorder, color: "#374151", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 10; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  // 报关单标题
+  c["3,0"] = { value: "出 口 报 关 单", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 6, ...noBorder, color: "#1a56db" };
+  for (let i = 1; i < 6; i++) c[`3,${i}`] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,6"] = { value: "CUSTOMS DECLARATION", bold: true, fontSize: 12, textAlign: "center", verticalAlign: "middle", colSpan: 4, ...noBorder, color: "#6b7280" };
+  for (let i = 7; i < 10; i++) c[`3,${i}`] = { value: "", merged: true, mergeParent: "3,6" };
+
+  // 基本信息区（左右两栏）
+  c["4,0"] = { value: "报关单号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${declarationNo}", ...infoStyle, colSpan: 3 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,5"] = { value: "报关日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,6"] = { value: "", merged: true, mergeParent: "4,5" };
+  c["4,7"] = { value: "${declarationDate}", ...infoStyle, colSpan: 3 };
+  c["4,8"] = { value: "", merged: true, mergeParent: "4,7" };
+  c["4,9"] = { value: "", merged: true, mergeParent: "4,7" };
+
+  c["5,0"] = { value: "出口商：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,1"] = { value: "", merged: true, mergeParent: "5,0" };
+  c["5,2"] = { value: "${exporterName}", ...infoStyle, colSpan: 3 };
+  c["5,3"] = { value: "", merged: true, mergeParent: "5,2" };
+  c["5,4"] = { value: "", merged: true, mergeParent: "5,2" };
+  c["5,5"] = { value: "进口商：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,6"] = { value: "", merged: true, mergeParent: "5,5" };
+  c["5,7"] = { value: "${importerName}", ...infoStyle, colSpan: 3 };
+  c["5,8"] = { value: "", merged: true, mergeParent: "5,7" };
+  c["5,9"] = { value: "", merged: true, mergeParent: "5,7" };
+
+  c["6,0"] = { value: "贸易方式：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["6,1"] = { value: "", merged: true, mergeParent: "6,0" };
+  c["6,2"] = { value: "${tradeMode}", ...infoStyle, colSpan: 3 };
+  c["6,3"] = { value: "", merged: true, mergeParent: "6,2" };
+  c["6,4"] = { value: "", merged: true, mergeParent: "6,2" };
+  c["6,5"] = { value: "运输方式：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["6,6"] = { value: "", merged: true, mergeParent: "6,5" };
+  c["6,7"] = { value: "${transportMode}", ...infoStyle, colSpan: 3 };
+  c["6,8"] = { value: "", merged: true, mergeParent: "6,7" };
+  c["6,9"] = { value: "", merged: true, mergeParent: "6,7" };
+
+  c["7,0"] = { value: "起运港：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["7,1"] = { value: "", merged: true, mergeParent: "7,0" };
+  c["7,2"] = { value: "${departurePort}", ...infoStyle, colSpan: 3 };
+  c["7,3"] = { value: "", merged: true, mergeParent: "7,2" };
+  c["7,4"] = { value: "", merged: true, mergeParent: "7,2" };
+  c["7,5"] = { value: "目的港：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["7,6"] = { value: "", merged: true, mergeParent: "7,5" };
+  c["7,7"] = { value: "${destinationPort}", ...infoStyle, colSpan: 3 };
+  c["7,8"] = { value: "", merged: true, mergeParent: "7,7" };
+  c["7,9"] = { value: "", merged: true, mergeParent: "7,7" };
+
+  c["8,0"] = { value: "", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`8,${i}`] = { value: "", merged: true, mergeParent: "8,0" };
+
+  // 货物明细表头
+  c["9,0"] = { value: "序号", ...headerStyle };
+  c["9,1"] = { value: "商品名称（中文）", ...headerStyle, colSpan: 2 };
+  c["9,2"] = { value: "", merged: true, mergeParent: "9,1" };
+  c["9,3"] = { value: "商品编码", ...headerStyle };
+  c["9,4"] = { value: "规格型号", ...headerStyle };
+  c["9,5"] = { value: "数量", ...headerStyle };
+  c["9,6"] = { value: "单位", ...headerStyle };
+  c["9,7"] = { value: "单价(USD)", ...headerStyle };
+  c["9,8"] = { value: "总价(USD)", ...headerStyle };
+  c["9,9"] = { value: "原产地", ...headerStyle };
+
+  c["10,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["10,1"] = { value: "${items.productName}", ...bodyStyle, textAlign: "left", colSpan: 2 };
+  c["10,2"] = { value: "", merged: true, mergeParent: "10,1" };
+  c["10,3"] = { value: "${items.hsCode}", ...bodyStyle };
+  c["10,4"] = { value: "${items.specification}", ...bodyStyle };
+  c["10,5"] = { value: "${items.quantity}", ...bodyStyle };
+  c["10,6"] = { value: "${items.unit}", ...bodyStyle };
+  c["10,7"] = { value: "${items.unitPrice}", ...bodyStyle };
+  c["10,8"] = { value: "${items.totalPrice}", ...bodyStyle };
+  c["10,9"] = { value: "{{/each}}", ...bodyStyle };
+
+  // 合计行
+  c["11,0"] = { value: "合计", bold: true, ...solidBorder, fontSize: 9, textAlign: "center", bgColor: "#f5f5f5", colSpan: 5 };
+  for (let i = 1; i < 5; i++) c[`11,${i}`] = { value: "", merged: true, mergeParent: "11,0" };
+  c["11,5"] = { value: "${totalQuantity}", bold: true, ...solidBorder, fontSize: 9 };
+  c["11,6"] = { value: "", ...solidBorder, fontSize: 9 };
+  c["11,7"] = { value: "", ...solidBorder, fontSize: 9 };
+  c["11,8"] = { value: "${totalAmount | currency}", bold: true, ...solidBorder, fontSize: 9 };
+  c["11,9"] = { value: "", ...solidBorder, fontSize: 9 };
+
+  c["12,0"] = { value: "", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,0" };
+
+  // 包装信息
+  c["13,0"] = { value: "包装方式：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["13,1"] = { value: "", merged: true, mergeParent: "13,0" };
+  c["13,2"] = { value: "${packagingType}", ...infoStyle, colSpan: 2 };
+  c["13,3"] = { value: "", merged: true, mergeParent: "13,2" };
+  c["13,4"] = { value: "件数：", bold: true, ...infoStyle, textAlign: "right" };
+  c["13,5"] = { value: "${packageCount}", ...infoStyle };
+  c["13,6"] = { value: "毛重(KG)：", bold: true, ...infoStyle, textAlign: "right" };
+  c["13,7"] = { value: "${grossWeight}", ...infoStyle };
+  c["13,8"] = { value: "净重(KG)：", bold: true, ...infoStyle, textAlign: "right" };
+  c["13,9"] = { value: "${netWeight}", ...infoStyle };
+
+  c["14,0"] = { value: "随附单据：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["14,1"] = { value: "", merged: true, mergeParent: "14,0" };
+  c["14,2"] = { value: "${attachedDocuments}", ...infoStyle, colSpan: 8 };
+  for (let i = 3; i < 10; i++) c[`14,${i}`] = { value: "", merged: true, mergeParent: "14,2" };
+
+  c["15,0"] = { value: "", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`15,${i}`] = { value: "", merged: true, mergeParent: "15,0" };
+
+  // 声明与签名
+  c["16,0"] = { value: "申报人声明：本人保证以上所报内容真实、准确，如有不实，愿承担相应法律责任。", fontSize: 9, colSpan: 10, ...noBorder, color: "#374151" };
+  for (let i = 1; i < 10; i++) c[`16,${i}`] = { value: "", merged: true, mergeParent: "16,0" };
+
+  c["17,0"] = { value: "", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`17,${i}`] = { value: "", merged: true, mergeParent: "17,0" };
+
+  const sigHeaderStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#f0f0f0", ...solidBorder };
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, ...solidBorder };
+  c["18,0"] = { value: "报关员", ...sigHeaderStyle, colSpan: 3 };
+  c["18,1"] = { value: "", merged: true, mergeParent: "18,0" };
+  c["18,2"] = { value: "", merged: true, mergeParent: "18,0" };
+  c["18,3"] = { value: "审核人", ...sigHeaderStyle, colSpan: 4 };
+  c["18,4"] = { value: "", merged: true, mergeParent: "18,3" };
+  c["18,5"] = { value: "", merged: true, mergeParent: "18,3" };
+  c["18,6"] = { value: "", merged: true, mergeParent: "18,3" };
+  c["18,7"] = { value: "海关专用章", ...sigHeaderStyle, colSpan: 3 };
+  c["18,8"] = { value: "", merged: true, mergeParent: "18,7" };
+  c["18,9"] = { value: "", merged: true, mergeParent: "18,7" };
+
+  c["19,0"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 3 };
+  c["19,1"] = { value: "", merged: true, mergeParent: "19,0" };
+  c["19,2"] = { value: "", merged: true, mergeParent: "19,0" };
+  c["20,0"] = { value: "", merged: true, mergeParent: "19,0" };
+  c["20,1"] = { value: "", merged: true, mergeParent: "19,0" };
+  c["20,2"] = { value: "", merged: true, mergeParent: "19,0" };
+  c["21,0"] = { value: "", merged: true, mergeParent: "19,0" };
+  c["21,1"] = { value: "", merged: true, mergeParent: "19,0" };
+  c["21,2"] = { value: "", merged: true, mergeParent: "19,0" };
+  c["19,3"] = { value: "", ...sigEmptyStyle, colSpan: 4, rowSpan: 3 };
+  c["19,4"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["19,5"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["19,6"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["20,3"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["20,4"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["20,5"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["20,6"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["21,3"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["21,4"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["21,5"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["21,6"] = { value: "", merged: true, mergeParent: "19,3" };
+  c["19,7"] = { value: "", ...sigEmptyStyle, colSpan: 3, rowSpan: 3 };
+  c["19,8"] = { value: "", merged: true, mergeParent: "19,7" };
+  c["19,9"] = { value: "", merged: true, mergeParent: "19,7" };
+  c["20,7"] = { value: "", merged: true, mergeParent: "19,7" };
+  c["20,8"] = { value: "", merged: true, mergeParent: "19,7" };
+  c["20,9"] = { value: "", merged: true, mergeParent: "19,7" };
+  c["21,7"] = { value: "", merged: true, mergeParent: "19,7" };
+  c["21,8"] = { value: "", merged: true, mergeParent: "19,7" };
+  c["21,9"] = { value: "", merged: true, mergeParent: "19,7" };
+
+  c["22,0"] = { value: "打印时间：${printTime}  |  ${company.name}  |  ${company.phone}", fontSize: 8, color: "#999", colSpan: 10, ...noBorder };
+  for (let i = 1; i < 10; i++) c[`22,${i}`] = { value: "", merged: true, mergeParent: "22,0" };
+
+  return data;
+}
+
 // 获取默认模板数据
 export function getDefaultSpreadsheetData(templateKey: string): SpreadsheetData {
   switch (templateKey) {
     case "sales_order": return createSalesOrderTemplate();
     case "purchase_order": return createPurchaseOrderTemplate();
     case "production_order": return createProductionOrderTemplate();
-    default: return createSalesOrderTemplate(); // 其他模板暂用销售订单模板
+    case "material_requisition": return createMaterialRequisitionTemplate();
+    case "warehouse_in": return createWarehouseInTemplate();
+    case "warehouse_out": return createWarehouseOutTemplate();
+    case "inventory_check": return createInventoryCheckTemplate();
+    case "ipqc_inspection": return createIpqcInspectionTemplate();
+    case "oqc_inspection": return createOqcInspectionTemplate();
+    case "production_flow_card": return createProductionFlowCardTemplate();
+    case "expense_claim": return createExpenseClaimTemplate();
+    case "leave_request": return createLeaveRequestTemplate();
+    case "overtime_request": return createOvertimeRequestTemplate();
+    case "outing_request": return createOutingRequestTemplate();
+    case "sterilization_outsource": return createSterilizationOutsourceTemplate();
+    case "customs_declaration": return createCustomsDeclarationTemplate();
+    default: return createSalesOrderTemplate();
   }
 }
 
