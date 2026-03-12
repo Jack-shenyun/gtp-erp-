@@ -24,13 +24,14 @@ import {
   AlignLeft, AlignCenter, AlignRight, Bold, Italic, Plus, Eye,
   Printer, ArrowLeft, Layers, Settings, ChevronDown, ChevronUp,
   Copy, Undo2, Redo2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown,
-  Image, Grid3X3, ZoomIn, ZoomOut, Download, Upload, FileJson,
+  Image as ImageIcon, Grid3X3, ZoomIn, ZoomOut, Download, Upload, FileJson,
   Stethoscope, RotateCcw, MousePointer, Move, GripVertical,
+  Ruler, PlusCircle, Database, Replace,
 } from "lucide-react";
 import { toast } from "sonner";
 import bwipjs from "bwip-js";
 import { isGS1Format, is2DFormat, BARCODE_FORMAT_OPTIONS, validateGS1Data, formatHRI, formatHRILines } from "@/lib/gs1BarcodeUtils";
-import { MEDICAL_SYMBOLS, renderMedicalSymbol } from "@/components/udi/MedicalSymbols";
+import { MEDICAL_SYMBOLS, renderMedicalSymbol, getSymbolsByRegulation, CATEGORY_LABELS, type MedicalSymbol } from "@/components/udi/MedicalSymbols";
 import BatchPrintDialog from "@/components/udi/BatchPrintDialog";
 
 // ── 类型定义 ──────────────────────────────────────────────────────
@@ -62,6 +63,8 @@ interface LabelElement {
   fontFamily?: string;
   textDecoration?: "none" | "underline";
   letterSpacing?: number;
+  imageSrc?: string;
+  objectFit?: "contain" | "cover" | "fill";
 }
 
 interface LabelTemplate {
@@ -284,6 +287,12 @@ export default function LabelDesignerPage() {
   const [showPresetDialog, setShowPresetDialog] = useState(false);
   const [showBatchPrint, setShowBatchPrint] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showNewSizeDialog, setShowNewSizeDialog] = useState(false);
+  const [newSize, setNewSize] = useState({ width: 100, height: 60, name: "" });
+  const [symbolFilter, setSymbolFilter] = useState<"all" | "NMPA" | "FDA" | "MDR">("all");
+  const [customSymbols, setCustomSymbols] = useState<Array<{ id: string; name: string; src: string }>>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const symbolImageInputRef = useRef<HTMLInputElement>(null);
   const [templateNameInput, setTemplateNameInput] = useState("");
   const [savedTemplates, setSavedTemplates] = useState<LabelTemplate[]>(() => {
     try {
@@ -401,8 +410,8 @@ export default function LabelDesignerPage() {
     const el: LabelElement = {
       id: uid(), type,
       x: 5, y: 5,
-      width: type === "line" ? 60 : type === "qrcode" ? 20 : type === "barcode" ? 60 : type === "symbol" ? 8 : 50,
-      height: type === "line" ? 0.5 : type === "qrcode" ? 20 : type === "barcode" ? 15 : type === "symbol" ? 8 : 8,
+      width: type === "line" ? 60 : type === "qrcode" ? 20 : type === "barcode" ? 60 : type === "symbol" ? 8 : type === "image" ? 25 : 50,
+      height: type === "line" ? 0.5 : type === "qrcode" ? 20 : type === "barcode" ? 15 : type === "symbol" ? 8 : type === "image" ? 25 : 8,
       content: type === "text" ? "文本内容" : type === "barcode" ? "06975573321040" : type === "qrcode" ? "06975573321040" : "",
       fontSize: 10, fontWeight: "normal", fontStyle: "normal",
       textAlign: "left", color: "#000000",
@@ -415,6 +424,53 @@ export default function LabelDesignerPage() {
     };
     setTemplate(t => ({ ...t, elements: [...t.elements, el] }));
     setSelectedId(el.id);
+  }
+
+  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("请选择图片文件"); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const img = new window.Image();
+      img.onload = () => {
+        const maxW = 40;
+        const ratio = img.height / img.width;
+        addElement("image", { content: "图片", width: maxW, height: maxW * ratio, imageSrc: src, objectFit: "contain" });
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handleSymbolImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const id = `custom_${Date.now()}`;
+      setCustomSymbols(prev => [...prev, { id, name: file.name.replace(/\.[^.]+$/, ""), src }]);
+      toast.success("自定义符号已添加");
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handleCreateNewSize() {
+    pushHistory(template);
+    setTemplate(t => ({
+      ...t,
+      name: newSize.name || `自定义 ${newSize.width}×${newSize.height}`,
+      width: newSize.width,
+      height: newSize.height,
+      elements: [],
+    }));
+    setSelectedId(null);
+    setShowNewSizeDialog(false);
+    toast.success("已创建新标签模板");
   }
 
   function addSymbol(symbolId: string) {
@@ -771,7 +827,27 @@ export default function LabelDesignerPage() {
           display: "flex", alignItems: "center", justifyContent: "center",
           outline: selBorder, outlineOffset: selOutlineOffset,
         }}>
-        {el.symbolId && renderMedicalSymbol(el.symbolId, Math.min(w, h), el.color || "#000")}
+        {el.symbolId && (
+          el.symbolId.startsWith("custom_")
+            ? <img src={customSymbols.find(s => s.id === el.symbolId)?.src} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            : renderMedicalSymbol(el.symbolId, Math.min(w, h), el.color || "#000")
+        )}
+        {resizeHandles}
+      </div>
+    );
+
+    if (el.type === "image") return (
+      <div key={el.id} onMouseDown={e => handleMouseDown(e, el.id)}
+        style={{
+          ...baseStyle,
+          outline: selBorder, outlineOffset: selOutlineOffset,
+          overflow: "hidden",
+        }}>
+        {el.imageSrc ? (
+          <img src={el.imageSrc} alt="" style={{ width: "100%", height: "100%", objectFit: el.objectFit || "contain", display: "block" }} />
+        ) : (
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6", border: "1px dashed #ccc", fontSize: 10, color: "#999" }}>图片</div>
+        )}
         {resizeHandles}
       </div>
     );
@@ -969,20 +1045,26 @@ export default function LabelDesignerPage() {
                     { type: "qrcode" as ElementType, icon: QrCode, label: "二维码" },
                     { type: "line" as ElementType, icon: Minus, label: "线条" },
                     { type: "rect" as ElementType, icon: Square, label: "矩形" },
+                    { type: "image" as ElementType, icon: ImageIcon, label: "图片" },
                   ].map(({ type, icon: Icon, label }) => (
-                    <button key={type} onClick={() => addElement(type)}
+                    <button key={type} onClick={() => type === "image" ? imageInputRef.current?.click() : addElement(type)}
                       className="flex flex-col items-center gap-1 p-2 rounded-md border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 transition-colors text-xs text-gray-700">
                       <Icon className="w-4 h-4" />
                       <span className="text-[10px]">{label}</span>
                     </button>
                   ))}
                 </div>
+                <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                <input ref={symbolImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleSymbolImageUpload} />
 
                 <Separator className="my-2" />
                 <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">快捷操作</p>
                 <div className="space-y-1">
                   <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1.5 justify-start" onClick={() => setShowPresetDialog(true)}>
                     <Stethoscope className="w-3 h-3" /> 加载预设模板
+                  </Button>
+                  <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1.5 justify-start" onClick={() => setShowNewSizeDialog(true)}>
+                    <Ruler className="w-3 h-3" /> 自定义标签尺寸
                   </Button>
                   <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1.5 justify-start" onClick={() => {
                     pushHistory(template);
@@ -1010,6 +1092,7 @@ export default function LabelDesignerPage() {
                       {el.type === "line" && <Minus className="w-3 h-3 shrink-0" />}
                       {el.type === "rect" && <Square className="w-3 h-3 shrink-0" />}
                       {el.type === "symbol" && <Stethoscope className="w-3 h-3 shrink-0" />}
+                      {el.type === "image" && <ImageIcon className="w-3 h-3 shrink-0" />}
                       <span className="truncate flex-1">
                         {el.type === "text"
                           ? (el.fieldBinding && el.fieldBinding !== "custom"
@@ -1027,16 +1110,58 @@ export default function LabelDesignerPage() {
 
               {/* 医疗器械符号标签页 */}
               <TabsContent value="symbols" className="flex-1 overflow-y-auto m-0 p-2">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">ISO 15223 符号</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {MEDICAL_SYMBOLS.map(sym => (
-                    <button key={sym.id} onClick={() => addSymbol(sym.id)}
-                      className="flex flex-col items-center gap-1 p-2 rounded-md border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 transition-colors">
-                      {sym.render(20, "#333")}
-                      <span className="text-[9px] text-gray-600 leading-tight text-center">{sym.nameZh}</span>
+                {/* 法规区域筛选 */}
+                <div className="flex items-center gap-1 mb-2 flex-wrap">
+                  {(["all", "NMPA", "FDA", "MDR"] as const).map(r => (
+                    <button key={r} onClick={() => setSymbolFilter(r)}
+                      className={`px-2 py-0.5 rounded text-[9px] font-medium border transition-colors ${
+                        symbolFilter === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
+                      }`}>
+                      {r === "all" ? "全部" : r}
                     </button>
                   ))}
                 </div>
+
+                {/* 上传自定义符号 */}
+                <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1.5 justify-start mb-2" onClick={() => symbolImageInputRef.current?.click()}>
+                  <Upload className="w-3 h-3" /> 上传自定义符号
+                </Button>
+
+                {/* 自定义符号 */}
+                {customSymbols.length > 0 && (
+                  <>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">自定义符号</p>
+                    <div className="grid grid-cols-2 gap-1.5 mb-2">
+                      {customSymbols.map(cs => (
+                        <button key={cs.id} onClick={() => addSymbol(cs.id)}
+                          className="flex flex-col items-center gap-1 p-2 rounded-md border border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-400 transition-colors">
+                          <img src={cs.src} className="w-5 h-5 object-contain" />
+                          <span className="text-[9px] text-gray-600 leading-tight text-center truncate w-full">{cs.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* 标准符号按分类展示 */}
+                {Object.entries(CATEGORY_LABELS).map(([cat, labels]) => {
+                  const syms = (symbolFilter === "all" ? MEDICAL_SYMBOLS : getSymbolsByRegulation(symbolFilter)).filter(s => s.category === cat);
+                  if (syms.length === 0) return null;
+                  return (
+                    <div key={cat} className="mb-2">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">{labels.zh}</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {syms.map(sym => (
+                          <button key={sym.id} onClick={() => addSymbol(sym.id)}
+                            className="flex flex-col items-center gap-1 p-2 rounded-md border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 transition-colors">
+                            {sym.render(20, "#333")}
+                            <span className="text-[9px] text-gray-600 leading-tight text-center">{sym.nameZh}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </TabsContent>
             </Tabs>
           </div>
@@ -1138,6 +1263,10 @@ export default function LabelDesignerPage() {
                           {s.n}
                         </button>
                       ))}
+                      <button onClick={() => setShowNewSizeDialog(true)}
+                        className="block w-full text-left px-2 py-1 rounded hover:bg-orange-50 hover:text-orange-600 transition-colors font-medium">
+                        <Ruler className="w-3 h-3 inline mr-1" />自定义尺寸...
+                      </button>
                     </div>
                     <Separator />
                     <p className="text-[10px] text-muted-foreground">
@@ -1343,6 +1472,41 @@ export default function LabelDesignerPage() {
                     )}
 
                     {/* 矩形属性 */}
+                    {selectedEl.type === "image" && (
+                      <>
+                        <Separator />
+                        <div className="space-y-2">
+                          <p className="text-[10px] text-muted-foreground font-medium">图片设置</p>
+                          <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1.5" onClick={() => {
+                            const input = document.createElement("input");
+                            input.type = "file";
+                            input.accept = "image/*";
+                            input.onchange = (ev) => {
+                              const file = (ev.target as HTMLInputElement).files?.[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = (e) => updateEl({ imageSrc: e.target?.result as string });
+                              reader.readAsDataURL(file);
+                            };
+                            input.click();
+                          }}>
+                            <Replace className="w-3 h-3" /> 替换图片
+                          </Button>
+                          <div className="space-y-0.5">
+                            <Label className="text-[9px] text-muted-foreground">适应模式</Label>
+                            <Select value={selectedEl.objectFit ?? "contain"} onValueChange={v => updateEl({ objectFit: v as "contain" | "cover" | "fill" })}>
+                              <SelectTrigger className="h-6 text-[10px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="contain">包含 (Contain)</SelectItem>
+                                <SelectItem value="cover">覆盖 (Cover)</SelectItem>
+                                <SelectItem value="fill">拉伸 (Fill)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
                     {selectedEl.type === "rect" && (
                       <>
                         <Separator />
@@ -1424,30 +1588,133 @@ export default function LabelDesignerPage() {
 
       {/* ===== 预设模板对话框 ===== */}
       <Dialog open={showPresetDialog} onOpenChange={setShowPresetDialog}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[700px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Stethoscope className="w-5 h-5" />
               预设标签模板
             </DialogTitle>
-            <DialogDescription>选择一个预设模板作为起点，加载后可自由编辑</DialogDescription>
+            <DialogDescription>按法规区域分类，选择一个预设模板作为起点，加载后可自由编辑</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 py-3">
-            {PRESET_TEMPLATES.map(p => (
-              <Card key={p.id} className="cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all"
-                onClick={() => loadPreset(p)}>
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm font-medium">{p.name}</span>
-                    {p.regulation && <Badge variant="outline" className="text-[10px]">{p.regulation}</Badge>}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {p.width}×{p.height}mm | {p.elements.length}个元素
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="space-y-4 py-3">
+            {/* 欧盟MDR */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200">欧盟 MDR</Badge>
+                <span className="text-[10px] text-muted-foreground">含 CE 标志、EC REP、SRN、Basic UDI-DI</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {PRESET_TEMPLATES.filter(p => p.regulation === "MDR").map(p => (
+                  <Card key={p.id} className="cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all" onClick={() => loadPreset(p)}>
+                    <CardContent className="p-3">
+                      <span className="text-sm font-medium">{p.name}</span>
+                      <div className="text-[10px] text-muted-foreground mt-1">{p.width}×{p.height}mm | {p.elements.length}个元素</div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+            {/* 美国FDA */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Badge className="bg-red-100 text-red-700 border-red-200">美国 FDA</Badge>
+                <span className="text-[10px] text-muted-foreground">含 FDA标识、510(k)、NDC、美国代理商</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {PRESET_TEMPLATES.filter(p => p.regulation === "FDA").map(p => (
+                  <Card key={p.id} className="cursor-pointer hover:ring-2 hover:ring-red-300 transition-all" onClick={() => loadPreset(p)}>
+                    <CardContent className="p-3">
+                      <span className="text-sm font-medium">{p.name}</span>
+                      <div className="text-[10px] text-muted-foreground mt-1">{p.width}×{p.height}mm | {p.elements.length}个元素</div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+            {/* 中国NMPA */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Badge className="bg-green-100 text-green-700 border-green-200">中国 NMPA</Badge>
+                <span className="text-[10px] text-muted-foreground">含中文标注、注册证号、中国UDI-DI</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {PRESET_TEMPLATES.filter(p => p.regulation === "NMPA").map(p => (
+                  <Card key={p.id} className="cursor-pointer hover:ring-2 hover:ring-green-300 transition-all" onClick={() => loadPreset(p)}>
+                    <CardContent className="p-3">
+                      <span className="text-sm font-medium">{p.name}</span>
+                      <div className="text-[10px] text-muted-foreground mt-1">{p.width}×{p.height}mm | {p.elements.length}个元素</div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+            {/* 通用 */}
+            {PRESET_TEMPLATES.filter(p => !p.regulation).length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline">通用模板</Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {PRESET_TEMPLATES.filter(p => !p.regulation).map(p => (
+                    <Card key={p.id} className="cursor-pointer hover:ring-2 hover:ring-gray-300 transition-all" onClick={() => loadPreset(p)}>
+                      <CardContent className="p-3">
+                        <span className="text-sm font-medium">{p.name}</span>
+                        <div className="text-[10px] text-muted-foreground mt-1">{p.width}×{p.height}mm | {p.elements.length}个元素</div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== 自定义标签尺寸对话框 ===== */}
+      <Dialog open={showNewSizeDialog} onOpenChange={setShowNewSizeDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Ruler className="w-5 h-5" />自定义标签尺寸</DialogTitle>
+            <DialogDescription>输入标签纸的实际尺寸（毫米），创建新的空白模板</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">模板名称</Label>
+              <Input value={newSize.name} placeholder="可选，如“内包装标签”" className="h-8 text-xs"
+                onChange={e => setNewSize(s => ({ ...s, name: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">宽度 (mm)</Label>
+                <Input type="number" value={newSize.width} min={10} max={500} className="h-8 text-xs"
+                  onChange={e => setNewSize(s => ({ ...s, width: +e.target.value || 100 }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">高度 (mm)</Label>
+                <Input type="number" value={newSize.height} min={10} max={500} className="h-8 text-xs"
+                  onChange={e => setNewSize(s => ({ ...s, height: +e.target.value || 60 }))} />
+              </div>
+            </div>
+            <div className="p-2 bg-gray-50 rounded text-[10px] text-muted-foreground">
+              <p className="font-medium mb-1">常用参考尺寸：</p>
+              <div className="grid grid-cols-2 gap-1">
+                {[
+                  { w: 100, h: 150, n: "内包装" }, { w: 100, h: 80, n: "中包装" },
+                  { w: 148, h: 210, n: "外包装 A5" }, { w: 60, h: 40, n: "小标签" },
+                  { w: 80, h: 50, n: "中标签" }, { w: 210, h: 297, n: "A4" },
+                ].map(s => (
+                  <button key={s.n} onClick={() => setNewSize(prev => ({ ...prev, width: s.w, height: s.h }))}
+                    className="text-left px-1.5 py-0.5 rounded hover:bg-blue-50 hover:text-blue-600">
+                    {s.n} ({s.w}×{s.h})
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">取消</Button></DialogClose>
+            <Button size="sm" onClick={handleCreateNewSize}>创建模板</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

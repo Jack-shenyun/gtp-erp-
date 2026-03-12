@@ -24,10 +24,10 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import bwipjs from "bwip-js";
-import { renderMedicalSymbol } from "@/components/udi/MedicalSymbols";
+import { renderMedicalSymbol } from "@/components/MedicalSymbols";
 
 // ── 类型（与Home.tsx保持一致）──────────────────────────────
-type ElementType = "text" | "barcode" | "qrcode" | "line" | "rect" | "symbol";
+type ElementType = "text" | "barcode" | "qrcode" | "line" | "rect" | "symbol" | "image";
 
 interface LabelElement {
   id: string; type: ElementType;
@@ -40,6 +40,7 @@ interface LabelElement {
   rotation?: number; opacity?: number; locked?: boolean;
   lineHeight?: number; fontFamily?: string;
   textDecoration?: "none" | "underline"; letterSpacing?: number;
+  imageSrc?: string; objectFit?: "contain" | "cover" | "fill";
 }
 
 interface LabelTemplate {
