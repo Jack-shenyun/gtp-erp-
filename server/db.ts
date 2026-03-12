@@ -141,7 +141,8 @@ const WORKFLOW_FORM_CATALOG_SEED: InsertWorkflowFormCatalog[] = [
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // TiDB Cloud requires SSL; pass connection config with ssl object
+      _db = drizzle({ connection: { uri: process.env.DATABASE_URL, ssl: { rejectUnauthorized: true } } });
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;

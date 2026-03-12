@@ -158,15 +158,21 @@ export default function PrintTemplatesPage() {
 
   // 更新 iframe 预览
   useEffect(() => {
-    if (previewRef.current && previewHtml) {
-      const doc = previewRef.current.contentDocument;
-      if (doc) {
-        doc.open();
-        doc.write(previewHtml);
-        doc.close();
+    if (!editOpen || !previewHtml) return;
+    const writeToIframe = () => {
+      if (previewRef.current) {
+        const doc = previewRef.current.contentDocument;
+        if (doc) {
+          doc.open();
+          doc.write(previewHtml);
+          doc.close();
+        }
       }
-    }
-  }, [previewHtml]);
+    };
+    // 延迟写入确保 Dialog 动画完成后 iframe 已挂载
+    const timer = setTimeout(writeToIframe, 100);
+    return () => clearTimeout(timer);
+  }, [previewHtml, editOpen]);
 
   // 打开编辑
   const handleEdit = (templateKey: string) => {
