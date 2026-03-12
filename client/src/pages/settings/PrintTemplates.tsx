@@ -27,6 +27,7 @@ import {
   buildPrintDocument,
   createPrintContext,
   renderTemplate,
+  spreadsheetToRenderableHtml,
 } from "@/lib/printEngine";
 import SpreadsheetEditor, {
   type SpreadsheetData,
@@ -367,117 +368,13 @@ function createProductionOrderTemplate(): SpreadsheetData {
 }
 
 // 获取默认模板数据
-function getDefaultSpreadsheetData(templateKey: string): SpreadsheetData {
+export function getDefaultSpreadsheetData(templateKey: string): SpreadsheetData {
   switch (templateKey) {
     case "sales_order": return createSalesOrderTemplate();
     case "purchase_order": return createPurchaseOrderTemplate();
     case "production_order": return createProductionOrderTemplate();
     default: return createSalesOrderTemplate(); // 其他模板暂用销售订单模板
   }
-}
-
-// ==================== 将 SpreadsheetData 转为可渲染的 HTML（带变量替换）====================
-
-function spreadsheetToRenderableHtml(data: SpreadsheetData): string {
-  const { cells, rowCount, colCount, colWidths, rowHeights } = data;
-  let html = `<table style="border-collapse:collapse;width:100%;table-layout:fixed;">`;
-  html += `<colgroup>`;
-  for (let c = 0; c < colCount; c++) {
-    html += `<col style="width:${colWidths[c] || 100}px;">`;
-  }
-  html += `</colgroup>`;
-
-  for (let r = 0; r < rowCount; r++) {
-    const rh = rowHeights[r] || 24;
-
-    // 检查该行是否包含 {{#each}} 或 {{/each}} 标记
-    let rowHasEachStart = false;
-    let rowHasEachEnd = false;
-    let eachArrayName = "";
-    for (let c = 0; c < colCount; c++) {
-      const cell = cells[`${r},${c}`];
-      if (!cell || cell.merged) continue;
-      const val = cell.value || "";
-      const eachMatch = val.match(/\{\{#each\s+([\w.]+)\}\}/);
-      if (eachMatch) {
-        rowHasEachStart = true;
-        eachArrayName = eachMatch[1];
-      }
-      if (val.includes("{{/each}}")) {
-        rowHasEachEnd = true;
-      }
-    }
-
-    // 如果同一行同时有 {{#each}} 和 {{/each}}，将循环标记提到 <tr> 外面
-    if (rowHasEachStart && rowHasEachEnd) {
-      html += `{{#each ${eachArrayName}}}`;
-      html += `<tr style="height:${rh}px;">`;
-      for (let c = 0; c < colCount; c++) {
-        const key = `${r},${c}`;
-        const cell = cells[key];
-        if (cell?.merged) continue;
-
-        const cd = cell || { value: "" };
-        const rs = cd.rowSpan && cd.rowSpan > 1 ? ` rowspan="${cd.rowSpan}"` : "";
-        const cs = cd.colSpan && cd.colSpan > 1 ? ` colspan="${cd.colSpan}"` : "";
-        const style = buildCellStyle(cd);
-
-        // 清理掉 {{#each ...}} 和 {{/each}} 标记，保留其他内容
-        let value = cd.value || "";
-        value = value.replace(/\{\{#each\s+[\w.]+\}\}/g, "");
-        value = value.replace(/\{\{\/each\}\}/g, "");
-        // 在 each 循环内，${items.xxx} 需要转为 {{xxx}}（去掉数组前缀）
-        value = value.replace(new RegExp(`\\$\\{${eachArrayName}\\.([^}]+)\\}`, 'g'), '{{$1}}');
-        // 其他变量正常转换
-        value = value.replace(/\$\{([^}]+)\}/g, "{{$1}}");
-        value = value.trim();
-
-        html += `<td${rs}${cs} style="${style}">${value}</td>`;
-      }
-      html += `</tr>`;
-      html += `{{/each}}`;
-    } else {
-      // 普通行
-      html += `<tr style="height:${rh}px;">`;
-      for (let c = 0; c < colCount; c++) {
-        const key = `${r},${c}`;
-        const cell = cells[key];
-        if (cell?.merged) continue;
-
-        const cd = cell || { value: "" };
-        const rs = cd.rowSpan && cd.rowSpan > 1 ? ` rowspan="${cd.rowSpan}"` : "";
-        const cs = cd.colSpan && cd.colSpan > 1 ? ` colspan="${cd.colSpan}"` : "";
-        const style = buildCellStyle(cd);
-
-        let value = cd.value || "";
-        value = value.replace(/\$\{([^}]+)\}/g, "{{$1}}");
-
-        html += `<td${rs}${cs} style="${style}">${value}</td>`;
-      }
-      html += `</tr>`;
-    }
-  }
-  html += `</table>`;
-  return html;
-}
-
-// 构建单元格内联样式
-function buildCellStyle(cd: { fontSize?: number; fontFamily?: string; bold?: boolean; italic?: boolean; underline?: boolean; textAlign?: string; verticalAlign?: string; bgColor?: string; color?: string; borderTop?: string; borderRight?: string; borderBottom?: string; borderLeft?: string }): string {
-  let style = `padding:2px 4px;`;
-  if (cd.fontSize) style += `font-size:${cd.fontSize}pt;`;
-  if (cd.fontFamily) style += `font-family:${cd.fontFamily};`;
-  if (cd.bold) style += `font-weight:bold;`;
-  if (cd.italic) style += `font-style:italic;`;
-  if (cd.underline) style += `text-decoration:underline;`;
-  if (cd.textAlign) style += `text-align:${cd.textAlign};`;
-  if (cd.verticalAlign) style += `vertical-align:${cd.verticalAlign};`;
-  if (cd.bgColor) style += `background-color:${cd.bgColor};`;
-  if (cd.color) style += `color:${cd.color};`;
-  if (cd.borderTop && cd.borderTop !== "none") style += `border-top:${cd.borderTop};`;
-  if (cd.borderRight && cd.borderRight !== "none") style += `border-right:${cd.borderRight};`;
-  if (cd.borderBottom && cd.borderBottom !== "none") style += `border-bottom:${cd.borderBottom};`;
-  if (cd.borderLeft && cd.borderLeft !== "none") style += `border-left:${cd.borderLeft};`;
-  return style;
 }
 
 // ==================== 将变量定义转为字段分组 ====================

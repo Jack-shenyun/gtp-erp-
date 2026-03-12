@@ -382,3 +382,141 @@ export function createPrintContext(
     printDate: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`,
   };
 }
+
+// ==================== SpreadsheetData → 可渲染 HTML ====================
+
+interface CellStyleData {
+  fontSize?: number;
+  fontFamily?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  textAlign?: string;
+  verticalAlign?: string;
+  bgColor?: string;
+  color?: string;
+  borderTop?: string;
+  borderRight?: string;
+  borderBottom?: string;
+  borderLeft?: string;
+}
+
+function buildCellStyle(cd: CellStyleData): string {
+  let style = `padding:2px 4px;`;
+  if (cd.fontSize) style += `font-size:${cd.fontSize}pt;`;
+  if (cd.fontFamily) style += `font-family:${cd.fontFamily};`;
+  if (cd.bold) style += `font-weight:bold;`;
+  if (cd.italic) style += `font-style:italic;`;
+  if (cd.underline) style += `text-decoration:underline;`;
+  if (cd.textAlign) style += `text-align:${cd.textAlign};`;
+  if (cd.verticalAlign) style += `vertical-align:${cd.verticalAlign};`;
+  if (cd.bgColor) style += `background-color:${cd.bgColor};`;
+  if (cd.color) style += `color:${cd.color};`;
+  if (cd.borderTop && cd.borderTop !== "none") style += `border-top:${cd.borderTop};`;
+  if (cd.borderRight && cd.borderRight !== "none") style += `border-right:${cd.borderRight};`;
+  if (cd.borderBottom && cd.borderBottom !== "none") style += `border-bottom:${cd.borderBottom};`;
+  if (cd.borderLeft && cd.borderLeft !== "none") style += `border-left:${cd.borderLeft};`;
+  return style;
+}
+
+/**
+ * 将 SpreadsheetData 转为可渲染的 HTML（含 {{变量}} 语法）
+ */
+export function spreadsheetToRenderableHtml(data: any): string {
+  const { cells, rowCount, colCount, colWidths, rowHeights } = data;
+  let html = `<table style="border-collapse:collapse;width:100%;table-layout:fixed;">`;
+  html += `<colgroup>`;
+  for (let c = 0; c < colCount; c++) {
+    html += `<col style="width:${colWidths?.[c] || 100}px;">`;
+  }
+  html += `</colgroup>`;
+
+  for (let r = 0; r < rowCount; r++) {
+    const rh = rowHeights?.[r] || 24;
+    let rowHasEachStart = false;
+    let rowHasEachEnd = false;
+    let eachArrayName = "";
+    for (let c = 0; c < colCount; c++) {
+      const cell = cells[`${r},${c}`];
+      if (!cell || cell.merged) continue;
+      const val = cell.value || "";
+      const eachMatch = val.match(/\{\{#each\s+([\w.]+)\}\}/);
+      if (eachMatch) { rowHasEachStart = true; eachArrayName = eachMatch[1]; }
+      if (val.includes("{{/each}}")) { rowHasEachEnd = true; }
+    }
+
+    if (rowHasEachStart && rowHasEachEnd) {
+      html += `{{#each ${eachArrayName}}}`;
+      html += `<tr style="height:${rh}px;">`;
+      for (let c = 0; c < colCount; c++) {
+        const key = `${r},${c}`;
+        const cell = cells[key];
+        if (cell?.merged) continue;
+        const cd = cell || { value: "" };
+        const rs = cd.rowSpan && cd.rowSpan > 1 ? ` rowspan="${cd.rowSpan}"` : "";
+        const cs = cd.colSpan && cd.colSpan > 1 ? ` colspan="${cd.colSpan}"` : "";
+        const style = buildCellStyle(cd);
+        let value = cd.value || "";
+        value = value.replace(/\{\{#each\s+[\w.]+\}\}/g, "");
+        value = value.replace(/\{\{\/each\}\}/g, "");
+        value = value.replace(new RegExp(`\\$\\{${eachArrayName}\\.([^}]+)\\}`, 'g'), '{{$1}}');
+        value = value.replace(/\$\{([^}]+)\}/g, "{{$1}}");
+        value = value.trim();
+        html += `<td${rs}${cs} style="${style}">${value}</td>`;
+      }
+      html += `</tr>`;
+      html += `{{/each}}`;
+    } else {
+      html += `<tr style="height:${rh}px;">`;
+      for (let c = 0; c < colCount; c++) {
+        const key = `${r},${c}`;
+        const cell = cells[key];
+        if (cell?.merged) continue;
+        const cd = cell || { value: "" };
+        const rs = cd.rowSpan && cd.rowSpan > 1 ? ` rowspan="${cd.rowSpan}"` : "";
+        const cs = cd.colSpan && cd.colSpan > 1 ? ` colspan="${cd.colSpan}"` : "";
+        const style = buildCellStyle(cd);
+        let value = cd.value || "";
+        value = value.replace(/\$\{([^}]+)\}/g, "{{$1}}");
+        html += `<td${rs}${cs} style="${style}">${value}</td>`;
+      }
+      html += `</tr>`;
+    }
+  }
+  html += `</table>`;
+  return html;
+}
+
+/**
+ * 解析 htmlContent 字段：
+ * - 如果是 JSON 格式的 SpreadsheetData，反序列化后转为 HTML
+ * - 如果是普通 HTML，直接返回
+ */
+export function resolveTemplateHtml(htmlContent: string): {
+  html: string;
+  paperSize?: string;
+  orientation?: string;
+  marginTop?: number;
+  marginRight?: number;
+  marginBottom?: number;
+  marginLeft?: number;
+} {
+  if (!htmlContent) return { html: "" };
+  try {
+    const parsed = JSON.parse(htmlContent);
+    if (parsed.cells && parsed.rowCount) {
+      return {
+        html: spreadsheetToRenderableHtml(parsed),
+        paperSize: parsed.paperSize,
+        orientation: parsed.orientation,
+        marginTop: parsed.marginTop,
+        marginRight: parsed.marginRight,
+        marginBottom: parsed.marginBottom,
+        marginLeft: parsed.marginLeft,
+      };
+    }
+  } catch {
+    // 不是 JSON，当作普通 HTML
+  }
+  return { html: htmlContent };
+}

@@ -8,7 +8,13 @@
 import { useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { getTemplateDefinition } from "@/lib/printTemplateDefaults";
-import { createPrintContext, executePrint } from "@/lib/printEngine";
+import {
+  createPrintContext,
+  executePrint,
+  resolveTemplateHtml,
+  spreadsheetToRenderableHtml,
+} from "@/lib/printEngine";
+import { getDefaultSpreadsheetData } from "@/pages/settings/PrintTemplates";
 
 export function usePrintTemplate() {
   // 获取公司信息
@@ -23,7 +29,7 @@ export function usePrintTemplate() {
    */
   const print = useCallback((templateKey: string, data: Record<string, any>) => {
     // 1. 查找自定义模版
-    const saved = savedTemplates?.find(t => t.templateKey === templateKey);
+    const saved = savedTemplates?.find((t: any) => t.templateKey === templateKey);
     // 2. 获取默认模版定义
     const def = getTemplateDefinition(templateKey);
     
@@ -32,23 +38,43 @@ export function usePrintTemplate() {
       return;
     }
 
-    // 3. 确定使用的 HTML 和 CSS
-    const htmlContent = saved?.htmlContent || def?.defaultHtml || "";
-    const cssContent = saved?.cssContent || def?.defaultCss || "";
-    const paperSize = saved?.paperSize || "A4";
-    const orientation = saved?.orientation || "portrait";
-    const marginTop = saved?.marginTop ?? 20;
-    const marginRight = saved?.marginRight ?? 20;
-    const marginBottom = saved?.marginBottom ?? 20;
-    const marginLeft = saved?.marginLeft ?? 20;
+    let htmlContent: string;
+    let paperSize = "A4";
+    let orientation = "portrait";
+    let marginTop = 15;
+    let marginRight = 10;
+    let marginBottom = 15;
+    let marginLeft = 10;
 
-    // 4. 创建打印上下文
+    if (saved?.htmlContent) {
+      // 有自定义模版 — 可能是 SpreadsheetData JSON 或旧的 HTML
+      const resolved = resolveTemplateHtml(saved.htmlContent);
+      htmlContent = resolved.html;
+      paperSize = resolved.paperSize || saved.paperSize || "A4";
+      orientation = resolved.orientation || saved.orientation || "portrait";
+      marginTop = resolved.marginTop ?? saved.marginTop ?? 15;
+      marginRight = resolved.marginRight ?? saved.marginRight ?? 10;
+      marginBottom = resolved.marginBottom ?? saved.marginBottom ?? 15;
+      marginLeft = resolved.marginLeft ?? saved.marginLeft ?? 10;
+    } else {
+      // 没有自定义模版 — 使用默认的 SpreadsheetData
+      const defaultData = getDefaultSpreadsheetData(templateKey);
+      htmlContent = spreadsheetToRenderableHtml(defaultData);
+      paperSize = defaultData.paperSize;
+      orientation = defaultData.orientation;
+      marginTop = defaultData.marginTop;
+      marginRight = defaultData.marginRight;
+      marginBottom = defaultData.marginBottom;
+      marginLeft = defaultData.marginLeft;
+    }
+
+    // 3. 创建打印上下文
     const ctx = createPrintContext(companyInfo || {}, data);
 
-    // 5. 执行打印（与预览使用完全相同的渲染逻辑）
+    // 4. 执行打印（与预览使用完全相同的渲染逻辑）
     executePrint({
       htmlContent,
-      cssContent,
+      cssContent: "",
       context: ctx,
       paperSize,
       orientation,
