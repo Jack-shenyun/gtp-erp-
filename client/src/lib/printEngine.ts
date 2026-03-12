@@ -64,6 +64,11 @@ export interface TemplateVariable {
  * 安全地获取嵌套对象属性
  */
 function getNestedValue(obj: any, path: string): any {
+  // 先尝试直接键名匹配（支持带点号的键，如 "company.name"）
+  if (obj != null && path in obj) {
+    return obj[path];
+  }
+  // 再尝试嵌套查找
   return path.split(".").reduce((current, key) => {
     if (current == null) return undefined;
     return current[key];

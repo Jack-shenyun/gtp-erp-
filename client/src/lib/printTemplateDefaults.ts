@@ -755,6 +755,21 @@ const productionOrderVariables: TemplateVariable[] = [
   { key: "expiryDate", label: "有效期至", type: "date", example: "2029-03-01" },
   { key: "productDescription", label: "产品描述", type: "string", example: "" },
   { key: "remark", label: "备注", type: "string", example: "" },
+  {
+    key: "bomItems", label: "BOM物料明细", type: "array",
+    example: [
+      { materialName: "不锈钢管", materialCode: "RAW-001", specification: "Φ6×1mm", unitUsage: 0.5, totalRequired: 5000, unit: "米" },
+      { materialName: "医用硬胶", materialCode: "RAW-002", specification: "医用级", unitUsage: 0.02, totalRequired: 200, unit: "kg" },
+    ],
+    children: [
+      { key: "materialName", label: "物料名称", type: "string" },
+      { key: "materialCode", label: "物料编码", type: "string" },
+      { key: "specification", label: "规格", type: "string" },
+      { key: "unitUsage", label: "单位用量", type: "number" },
+      { key: "totalRequired", label: "总需求量", type: "number" },
+      { key: "unit", label: "单位", type: "string" },
+    ],
+  },
 ];
 
 // ==================== IQC 来料检验报告模版 ====================

@@ -1,41 +1,21 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   Printer,
   FileText,
   Edit,
   Eye,
-  RotateCcw,
-  Save,
   ShoppingCart,
   Truck,
   Receipt,
   Factory,
   Package,
   ClipboardCheck,
-  Copy,
-  Code,
-  Palette,
-  Settings2,
-  Maximize2,
-  X,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import {
@@ -46,8 +26,14 @@ import {
 import {
   buildPrintDocument,
   createPrintContext,
-  executePrint,
+  renderTemplate,
 } from "@/lib/printEngine";
+import SpreadsheetEditor, {
+  type SpreadsheetData,
+  type FieldGroup,
+  createEmptySpreadsheet,
+  spreadsheetToHtml,
+} from "@/components/print/SpreadsheetEditor";
 
 // ==================== 图标映射 ====================
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -73,191 +59,596 @@ const MODULE_LABELS: Record<string, string> = {
   quality: "质量部",
 };
 
+// ==================== 默认模板数据（SpreadsheetData 格式）====================
+
+function createSalesOrderTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(25, 8);
+  data.colWidths = [40, 120, 80, 80, 60, 80, 80, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 24, 6, 24, 24, 24, 24, 24, 24, 24, 24, 24, 6, 24, 24, 24, 6, 28, 24, 24];
+
+  const c = data.cells;
+  // 标题行 - 合并全部列
+  c["0,0"] = { value: "${company.name}", bold: true, fontSize: 16, textAlign: "center", verticalAlign: "middle", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none", color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+
+  // 副标题
+  c["1,0"] = { value: "销 售 订 单", bold: true, fontSize: 14, textAlign: "center", verticalAlign: "middle", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  // 空行
+  c["2,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  // 基本信息区
+  const infoStyle = { fontSize: 9, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  c["3,0"] = { value: "订单编号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${orderNumber}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "订单日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${orderDate}", ...infoStyle, colSpan: 2 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "客户名称：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${customerName}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "交货日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${deliveryDate}", ...infoStyle, colSpan: 2 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "收货地址：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,1"] = { value: "", merged: true, mergeParent: "5,0" };
+  c["5,2"] = { value: "${shippingAddress}", ...infoStyle, colSpan: 6 };
+  for (let i = 3; i < 8; i++) c[`5,${i}`] = { value: "", merged: true, mergeParent: "5,2" };
+
+  c["6,0"] = { value: "联系人：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["6,1"] = { value: "", merged: true, mergeParent: "6,0" };
+  c["6,2"] = { value: "${shippingContact}", ...infoStyle, colSpan: 2 };
+  c["6,3"] = { value: "", merged: true, mergeParent: "6,2" };
+  c["6,4"] = { value: "联系电话：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["6,5"] = { value: "", merged: true, mergeParent: "6,4" };
+  c["6,6"] = { value: "${shippingPhone}", ...infoStyle, colSpan: 2 };
+  c["6,7"] = { value: "", merged: true, mergeParent: "6,6" };
+
+  // 空行
+  c["7,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`7,${i}`] = { value: "", merged: true, mergeParent: "7,0" };
+
+  // 产品明细表头
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, bgColor: "#e8edf5", borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  c["8,0"] = { value: "序号", ...headerStyle };
+  c["8,1"] = { value: "产品名称", ...headerStyle };
+  c["8,2"] = { value: "产品编码", ...headerStyle };
+  c["8,3"] = { value: "规格型号", ...headerStyle };
+  c["8,4"] = { value: "数量", ...headerStyle };
+  c["8,5"] = { value: "单价", ...headerStyle };
+  c["8,6"] = { value: "金额", ...headerStyle };
+  c["8,7"] = { value: "备注", ...headerStyle };
+
+  // 明细行（循环标记）
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, verticalAlign: "middle" as const, borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  // 循环开始标记行
+  c["9,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["9,1"] = { value: "${items.productName}", ...bodyStyle, textAlign: "left" };
+  c["9,2"] = { value: "${items.productCode}", ...bodyStyle };
+  c["9,3"] = { value: "${items.specification}", ...bodyStyle };
+  c["9,4"] = { value: "${items.quantity}", ...bodyStyle };
+  c["9,5"] = { value: "${items.unitPrice}", ...bodyStyle };
+  c["9,6"] = { value: "${items.amount}", ...bodyStyle };
+  c["9,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  // 合计行
+  c["10,0"] = { value: "", ...bodyStyle, colSpan: 6, textAlign: "right", bold: true };
+  for (let i = 1; i < 6; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,0" };
+  c["10,0"].value = "合计金额：";
+  c["10,6"] = { value: "${totalAmount | currency}", ...bodyStyle, bold: true, colSpan: 2 };
+  c["10,7"] = { value: "", merged: true, mergeParent: "10,6" };
+
+  // 空行
+  c["11,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`11,${i}`] = { value: "", merged: true, mergeParent: "11,0" };
+
+  // 备注
+  c["12,0"] = { value: "备注：", bold: true, fontSize: 9, colSpan: 2, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  c["12,1"] = { value: "", merged: true, mergeParent: "12,0" };
+  c["12,2"] = { value: "${notes}", fontSize: 9, colSpan: 6, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 3; i < 8; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,2" };
+
+  // 空行
+  c["13,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`13,${i}`] = { value: "", merged: true, mergeParent: "13,0" };
+
+  // 签名区
+  const sigStyle = { fontSize: 9, textAlign: "center" as const, borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000", bold: true, bgColor: "#f0f0f0" };
+  c["14,0"] = { value: "制单人", ...sigStyle, colSpan: 2 };
+  c["14,1"] = { value: "", merged: true, mergeParent: "14,0" };
+  c["14,2"] = { value: "审核人", ...sigStyle, colSpan: 2 };
+  c["14,3"] = { value: "", merged: true, mergeParent: "14,2" };
+  c["14,4"] = { value: "客户确认", ...sigStyle, colSpan: 2 };
+  c["14,5"] = { value: "", merged: true, mergeParent: "14,4" };
+  c["14,6"] = { value: "日期", ...sigStyle, colSpan: 2 };
+  c["14,7"] = { value: "", merged: true, mergeParent: "14,6" };
+
+  // 签名空行
+  const sigEmptyStyle = { fontSize: 9, textAlign: "center" as const, borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  c["15,0"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["15,1"] = { value: "", merged: true, mergeParent: "15,0" };
+  c["16,0"] = { value: "", merged: true, mergeParent: "15,0" };
+  c["16,1"] = { value: "", merged: true, mergeParent: "15,0" };
+  c["15,2"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["15,3"] = { value: "", merged: true, mergeParent: "15,2" };
+  c["16,2"] = { value: "", merged: true, mergeParent: "15,2" };
+  c["16,3"] = { value: "", merged: true, mergeParent: "15,2" };
+  c["15,4"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["15,5"] = { value: "", merged: true, mergeParent: "15,4" };
+  c["16,4"] = { value: "", merged: true, mergeParent: "15,4" };
+  c["16,5"] = { value: "", merged: true, mergeParent: "15,4" };
+  c["15,6"] = { value: "", ...sigEmptyStyle, colSpan: 2, rowSpan: 2 };
+  c["15,7"] = { value: "", merged: true, mergeParent: "15,6" };
+  c["16,6"] = { value: "", merged: true, mergeParent: "15,6" };
+  c["16,7"] = { value: "", merged: true, mergeParent: "15,6" };
+
+  // 页脚
+  c["17,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`17,${i}`] = { value: "", merged: true, mergeParent: "17,0" };
+
+  c["18,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 4, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 4; i++) c[`18,${i}`] = { value: "", merged: true, mergeParent: "18,0" };
+  c["18,4"] = { value: "${company.phone}", fontSize: 8, color: "#999", textAlign: "right", colSpan: 4, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 5; i < 8; i++) c[`18,${i}`] = { value: "", merged: true, mergeParent: "18,4" };
+
+  return data;
+}
+
+function createPurchaseOrderTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(22, 8);
+  data.colWidths = [40, 120, 80, 80, 60, 80, 80, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 6, 24, 24, 24, 24, 6, 24, 6, 24, 24, 24, 6, 24, 24, 24, 24];
+
+  const c = data.cells;
+  c["0,0"] = { value: "${company.name}", bold: true, fontSize: 16, textAlign: "center", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none", color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+
+  c["1,0"] = { value: "采 购 订 单", bold: true, fontSize: 14, textAlign: "center", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  const infoStyle = { fontSize: 9, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  c["3,0"] = { value: "采购单号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${orderNo}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "采购日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${orderDate}", ...infoStyle, colSpan: 2 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "供应商：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${supplierName}", ...infoStyle, colSpan: 6 };
+  for (let i = 3; i < 8; i++) c[`4,${i}`] = { value: "", merged: true, mergeParent: "4,2" };
+
+  c["5,0"] = { value: "联系人：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,1"] = { value: "", merged: true, mergeParent: "5,0" };
+  c["5,2"] = { value: "${contactPerson}", ...infoStyle, colSpan: 2 };
+  c["5,3"] = { value: "", merged: true, mergeParent: "5,2" };
+  c["5,4"] = { value: "联系电话：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,5"] = { value: "", merged: true, mergeParent: "5,4" };
+  c["5,6"] = { value: "${contactPhone}", ...infoStyle, colSpan: 2 };
+  c["5,7"] = { value: "", merged: true, mergeParent: "5,6" };
+
+  c["6,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`6,${i}`] = { value: "", merged: true, mergeParent: "6,0" };
+
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#e0f2fe", borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  c["7,0"] = { value: "序号", ...headerStyle };
+  c["7,1"] = { value: "产品名称", ...headerStyle };
+  c["7,2"] = { value: "产品编码", ...headerStyle };
+  c["7,3"] = { value: "规格型号", ...headerStyle };
+  c["7,4"] = { value: "数量", ...headerStyle };
+  c["7,5"] = { value: "单价", ...headerStyle };
+  c["7,6"] = { value: "金额", ...headerStyle };
+  c["7,7"] = { value: "备注", ...headerStyle };
+
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  c["8,0"] = { value: "{{#each items}}{{@number}}", ...bodyStyle };
+  c["8,1"] = { value: "${items.productName}", ...bodyStyle, textAlign: "left" };
+  c["8,2"] = { value: "${items.productCode}", ...bodyStyle };
+  c["8,3"] = { value: "${items.specification}", ...bodyStyle };
+  c["8,4"] = { value: "${items.quantity}", ...bodyStyle };
+  c["8,5"] = { value: "${items.unitPrice}", ...bodyStyle };
+  c["8,6"] = { value: "${items.amount}", ...bodyStyle };
+  c["8,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["9,0"] = { value: "合计金额：", ...bodyStyle, colSpan: 6, textAlign: "right", bold: true };
+  for (let i = 1; i < 6; i++) c[`9,${i}`] = { value: "", merged: true, mergeParent: "9,0" };
+  c["9,6"] = { value: "${totalAmount | currency}", ...bodyStyle, bold: true, colSpan: 2 };
+  c["9,7"] = { value: "", merged: true, mergeParent: "9,6" };
+
+  c["10,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,0" };
+
+  c["11,0"] = { value: "备注：${remark}", fontSize: 9, colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`11,${i}`] = { value: "", merged: true, mergeParent: "11,0" };
+
+  c["12,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,0" };
+
+  return data;
+}
+
+function createProductionOrderTemplate(): SpreadsheetData {
+  const data = createEmptySpreadsheet(22, 8);
+  data.colWidths = [40, 120, 80, 80, 60, 80, 80, 80];
+  data.rowHeights = [32, 28, 6, 24, 24, 24, 24, 6, 24, 24, 24, 24, 6, 24, 6, 24, 24, 24, 6, 24, 24, 24];
+
+  const c = data.cells;
+  c["0,0"] = { value: "${company.name}", bold: true, fontSize: 16, textAlign: "center", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none", color: "#1a56db" };
+  for (let i = 1; i < 8; i++) c[`0,${i}`] = { value: "", merged: true, mergeParent: "0,0" };
+
+  c["1,0"] = { value: "生 产 指 令 单", bold: true, fontSize: 14, textAlign: "center", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "2px solid #1a56db" };
+  for (let i = 1; i < 8; i++) c[`1,${i}`] = { value: "", merged: true, mergeParent: "1,0" };
+
+  c["2,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`2,${i}`] = { value: "", merged: true, mergeParent: "2,0" };
+
+  const infoStyle = { fontSize: 9, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  c["3,0"] = { value: "生产单号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,1"] = { value: "", merged: true, mergeParent: "3,0" };
+  c["3,2"] = { value: "${orderNo}", ...infoStyle, colSpan: 2 };
+  c["3,3"] = { value: "", merged: true, mergeParent: "3,2" };
+  c["3,4"] = { value: "计划日期：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["3,5"] = { value: "", merged: true, mergeParent: "3,4" };
+  c["3,6"] = { value: "${plannedStartDate}", ...infoStyle, colSpan: 2 };
+  c["3,7"] = { value: "", merged: true, mergeParent: "3,6" };
+
+  c["4,0"] = { value: "产品名称：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,1"] = { value: "", merged: true, mergeParent: "4,0" };
+  c["4,2"] = { value: "${productName}", ...infoStyle, colSpan: 2 };
+  c["4,3"] = { value: "", merged: true, mergeParent: "4,2" };
+  c["4,4"] = { value: "规格型号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["4,5"] = { value: "", merged: true, mergeParent: "4,4" };
+  c["4,6"] = { value: "${productSpec}", ...infoStyle, colSpan: 2 };
+  c["4,7"] = { value: "", merged: true, mergeParent: "4,6" };
+
+  c["5,0"] = { value: "生产数量：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,1"] = { value: "", merged: true, mergeParent: "5,0" };
+  c["5,2"] = { value: "${plannedQty}", ...infoStyle, colSpan: 2 };
+  c["5,3"] = { value: "", merged: true, mergeParent: "5,2" };
+  c["5,4"] = { value: "批号：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["5,5"] = { value: "", merged: true, mergeParent: "5,4" };
+  c["5,6"] = { value: "${batchNo}", ...infoStyle, colSpan: 2 };
+  c["5,7"] = { value: "", merged: true, mergeParent: "5,6" };
+
+  c["6,0"] = { value: "关联销售单：", bold: true, ...infoStyle, colSpan: 2, textAlign: "right" };
+  c["6,1"] = { value: "", merged: true, mergeParent: "6,0" };
+  c["6,2"] = { value: "${planNo}", ...infoStyle, colSpan: 6 };
+  for (let i = 3; i < 8; i++) c[`6,${i}`] = { value: "", merged: true, mergeParent: "6,2" };
+
+  c["7,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`7,${i}`] = { value: "", merged: true, mergeParent: "7,0" };
+
+  // BOM 物料表头
+  const headerStyle = { bold: true, fontSize: 9, textAlign: "center" as const, bgColor: "#fef3c7", borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  c["8,0"] = { value: "序号", ...headerStyle };
+  c["8,1"] = { value: "物料名称", ...headerStyle };
+  c["8,2"] = { value: "物料编码", ...headerStyle };
+  c["8,3"] = { value: "规格", ...headerStyle };
+  c["8,4"] = { value: "单位用量", ...headerStyle };
+  c["8,5"] = { value: "总需求量", ...headerStyle };
+  c["8,6"] = { value: "单位", ...headerStyle };
+  c["8,7"] = { value: "备注", ...headerStyle };
+
+  const bodyStyle = { fontSize: 9, textAlign: "center" as const, borderTop: "1px solid #000", borderRight: "1px solid #000", borderBottom: "1px solid #000", borderLeft: "1px solid #000" };
+  c["9,0"] = { value: "{{#each bomItems}}{{@number}}", ...bodyStyle };
+  c["9,1"] = { value: "${bomItems.materialName}", ...bodyStyle, textAlign: "left" };
+  c["9,2"] = { value: "${bomItems.materialCode}", ...bodyStyle };
+  c["9,3"] = { value: "${bomItems.specification}", ...bodyStyle };
+  c["9,4"] = { value: "${bomItems.unitUsage}", ...bodyStyle };
+  c["9,5"] = { value: "${bomItems.totalRequired}", ...bodyStyle };
+  c["9,6"] = { value: "${bomItems.unit}", ...bodyStyle };
+  c["9,7"] = { value: "{{/each}}", ...bodyStyle };
+
+  c["10,0"] = { value: "", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`10,${i}`] = { value: "", merged: true, mergeParent: "10,0" };
+
+  c["11,0"] = { value: "备注：${remark}", fontSize: 9, colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`11,${i}`] = { value: "", merged: true, mergeParent: "11,0" };
+
+  c["12,0"] = { value: "打印时间：${printTime}", fontSize: 8, color: "#999", colSpan: 8, borderTop: "none", borderLeft: "none", borderRight: "none", borderBottom: "none" };
+  for (let i = 1; i < 8; i++) c[`12,${i}`] = { value: "", merged: true, mergeParent: "12,0" };
+
+  return data;
+}
+
+// 获取默认模板数据
+function getDefaultSpreadsheetData(templateKey: string): SpreadsheetData {
+  switch (templateKey) {
+    case "sales_order": return createSalesOrderTemplate();
+    case "purchase_order": return createPurchaseOrderTemplate();
+    case "production_order": return createProductionOrderTemplate();
+    default: return createSalesOrderTemplate(); // 其他模板暂用销售订单模板
+  }
+}
+
+// ==================== 将 SpreadsheetData 转为可渲染的 HTML（带变量替换）====================
+
+function spreadsheetToRenderableHtml(data: SpreadsheetData): string {
+  const { cells, rowCount, colCount, colWidths, rowHeights } = data;
+  let html = `<table style="border-collapse:collapse;width:100%;table-layout:fixed;">`;
+  html += `<colgroup>`;
+  for (let c = 0; c < colCount; c++) {
+    html += `<col style="width:${colWidths[c] || 100}px;">`;
+  }
+  html += `</colgroup>`;
+
+  for (let r = 0; r < rowCount; r++) {
+    const rh = rowHeights[r] || 24;
+
+    // 检查该行是否包含 {{#each}} 或 {{/each}} 标记
+    let rowHasEachStart = false;
+    let rowHasEachEnd = false;
+    let eachArrayName = "";
+    for (let c = 0; c < colCount; c++) {
+      const cell = cells[`${r},${c}`];
+      if (!cell || cell.merged) continue;
+      const val = cell.value || "";
+      const eachMatch = val.match(/\{\{#each\s+([\w.]+)\}\}/);
+      if (eachMatch) {
+        rowHasEachStart = true;
+        eachArrayName = eachMatch[1];
+      }
+      if (val.includes("{{/each}}")) {
+        rowHasEachEnd = true;
+      }
+    }
+
+    // 如果同一行同时有 {{#each}} 和 {{/each}}，将循环标记提到 <tr> 外面
+    if (rowHasEachStart && rowHasEachEnd) {
+      html += `{{#each ${eachArrayName}}}`;
+      html += `<tr style="height:${rh}px;">`;
+      for (let c = 0; c < colCount; c++) {
+        const key = `${r},${c}`;
+        const cell = cells[key];
+        if (cell?.merged) continue;
+
+        const cd = cell || { value: "" };
+        const rs = cd.rowSpan && cd.rowSpan > 1 ? ` rowspan="${cd.rowSpan}"` : "";
+        const cs = cd.colSpan && cd.colSpan > 1 ? ` colspan="${cd.colSpan}"` : "";
+        const style = buildCellStyle(cd);
+
+        // 清理掉 {{#each ...}} 和 {{/each}} 标记，保留其他内容
+        let value = cd.value || "";
+        value = value.replace(/\{\{#each\s+[\w.]+\}\}/g, "");
+        value = value.replace(/\{\{\/each\}\}/g, "");
+        // 在 each 循环内，${items.xxx} 需要转为 {{xxx}}（去掉数组前缀）
+        value = value.replace(new RegExp(`\\$\\{${eachArrayName}\\.([^}]+)\\}`, 'g'), '{{$1}}');
+        // 其他变量正常转换
+        value = value.replace(/\$\{([^}]+)\}/g, "{{$1}}");
+        value = value.trim();
+
+        html += `<td${rs}${cs} style="${style}">${value}</td>`;
+      }
+      html += `</tr>`;
+      html += `{{/each}}`;
+    } else {
+      // 普通行
+      html += `<tr style="height:${rh}px;">`;
+      for (let c = 0; c < colCount; c++) {
+        const key = `${r},${c}`;
+        const cell = cells[key];
+        if (cell?.merged) continue;
+
+        const cd = cell || { value: "" };
+        const rs = cd.rowSpan && cd.rowSpan > 1 ? ` rowspan="${cd.rowSpan}"` : "";
+        const cs = cd.colSpan && cd.colSpan > 1 ? ` colspan="${cd.colSpan}"` : "";
+        const style = buildCellStyle(cd);
+
+        let value = cd.value || "";
+        value = value.replace(/\$\{([^}]+)\}/g, "{{$1}}");
+
+        html += `<td${rs}${cs} style="${style}">${value}</td>`;
+      }
+      html += `</tr>`;
+    }
+  }
+  html += `</table>`;
+  return html;
+}
+
+// 构建单元格内联样式
+function buildCellStyle(cd: { fontSize?: number; fontFamily?: string; bold?: boolean; italic?: boolean; underline?: boolean; textAlign?: string; verticalAlign?: string; bgColor?: string; color?: string; borderTop?: string; borderRight?: string; borderBottom?: string; borderLeft?: string }): string {
+  let style = `padding:2px 4px;`;
+  if (cd.fontSize) style += `font-size:${cd.fontSize}pt;`;
+  if (cd.fontFamily) style += `font-family:${cd.fontFamily};`;
+  if (cd.bold) style += `font-weight:bold;`;
+  if (cd.italic) style += `font-style:italic;`;
+  if (cd.underline) style += `text-decoration:underline;`;
+  if (cd.textAlign) style += `text-align:${cd.textAlign};`;
+  if (cd.verticalAlign) style += `vertical-align:${cd.verticalAlign};`;
+  if (cd.bgColor) style += `background-color:${cd.bgColor};`;
+  if (cd.color) style += `color:${cd.color};`;
+  if (cd.borderTop && cd.borderTop !== "none") style += `border-top:${cd.borderTop};`;
+  if (cd.borderRight && cd.borderRight !== "none") style += `border-right:${cd.borderRight};`;
+  if (cd.borderBottom && cd.borderBottom !== "none") style += `border-bottom:${cd.borderBottom};`;
+  if (cd.borderLeft && cd.borderLeft !== "none") style += `border-left:${cd.borderLeft};`;
+  return style;
+}
+
+// ==================== 将变量定义转为字段分组 ====================
+
+function variablesToFieldGroups(templateKey: string): FieldGroup[] {
+  const def = getTemplateDefinition(templateKey);
+  if (!def) return [];
+
+  const companyFields: FieldGroup = {
+    name: "公司信息",
+    fields: def.variables
+      .filter(v => v.key.startsWith("company.") || v.key === "printTime" || v.key === "printDate")
+      .map(v => ({ key: v.key, label: v.label, type: v.type })),
+  };
+
+  const businessFields: FieldGroup = {
+    name: "业务数据",
+    fields: def.variables
+      .filter(v => !v.key.startsWith("company.") && v.key !== "printTime" && v.key !== "printDate")
+      .map(v => ({
+        key: v.key,
+        label: v.label,
+        type: v.type,
+        children: v.children?.map(c => ({ key: c.key, label: c.label, type: c.type })),
+      })),
+  };
+
+  return [businessFields, companyFields];
+}
+
 // ==================== 主页面组件 ====================
 
 export default function PrintTemplatesPage() {
-  // 编辑状态
-  const [editOpen, setEditOpen] = useState(false);
-  const [editFullscreen, setEditFullscreen] = useState(false);
+  // 编辑模式
+  const [editorMode, setEditorMode] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [editingHtml, setEditingHtml] = useState("");
-  const [editingCss, setEditingCss] = useState("");
-  const [editingName, setEditingName] = useState("");
-  const [editingDesc, setEditingDesc] = useState("");
-  const [editingPaperSize, setEditingPaperSize] = useState("A4");
-  const [editingOrientation, setEditingOrientation] = useState("portrait");
-  const [editingMargins, setEditingMargins] = useState({ top: 20, right: 20, bottom: 20, left: 20 });
-  const [editorTab, setEditorTab] = useState("html");
+  const [spreadsheetData, setSpreadsheetData] = useState<SpreadsheetData>(createEmptySpreadsheet());
   const previewRef = useRef<HTMLIFrameElement>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // 后端数据
   const { data: savedTemplates, refetch } = trpc.printTemplates.list.useQuery();
   const upsertMutation = trpc.printTemplates.upsert.useMutation({
     onSuccess: () => { refetch(); toast.success("模板已保存到服务器"); },
-    onError: (err) => toast.error(`保存失败：${err.message}`),
+    onError: (err: any) => toast.error(`保存失败：${err.message}`),
   });
   const deleteMutation = trpc.printTemplates.delete.useMutation({
     onSuccess: () => { refetch(); toast.success("已恢复默认模板"); },
-    onError: (err) => toast.error(`重置失败：${err.message}`),
+    onError: (err: any) => toast.error(`重置失败：${err.message}`),
   });
   const { data: companyInfo } = trpc.companyInfo.get.useQuery();
 
-  // 获取模版内容（优先后端保存的，否则用默认）
+  // 获取模板内容
   const getTemplateContent = useCallback((templateKey: string) => {
-    const saved = savedTemplates?.find(t => t.templateKey === templateKey);
+    const saved = savedTemplates?.find((t: any) => t.templateKey === templateKey);
     const def = getTemplateDefinition(templateKey);
-    if (saved) {
-      return {
-        htmlContent: saved.htmlContent,
-        cssContent: saved.cssContent || def?.defaultCss || "",
-        name: saved.name,
-        description: saved.description || def?.description || "",
-        paperSize: saved.paperSize || "A4",
-        orientation: saved.orientation || "portrait",
-        marginTop: saved.marginTop ?? 20,
-        marginRight: saved.marginRight ?? 20,
-        marginBottom: saved.marginBottom ?? 20,
-        marginLeft: saved.marginLeft ?? 20,
-        isCustomized: true,
-      };
+    if (saved?.htmlContent) {
+      try {
+        // 尝试解析为 SpreadsheetData（JSON 格式存储）
+        const parsed = JSON.parse(saved.htmlContent);
+        if (parsed.cells && parsed.rowCount) {
+          return { spreadsheetData: parsed as SpreadsheetData, isCustomized: true };
+        }
+      } catch {
+        // 不是 JSON，可能是旧的 HTML 格式
+      }
     }
     return {
-      htmlContent: def?.defaultHtml || "",
-      cssContent: def?.defaultCss || "",
-      name: def?.name || "",
-      description: def?.description || "",
-      paperSize: "A4",
-      orientation: "portrait",
-      marginTop: 20,
-      marginRight: 20,
-      marginBottom: 20,
-      marginLeft: 20,
-      isCustomized: false,
+      spreadsheetData: getDefaultSpreadsheetData(templateKey),
+      isCustomized: !!saved,
     };
   }, [savedTemplates]);
 
+  // 打开编辑器
+  const handleEdit = useCallback((templateKey: string) => {
+    const content = getTemplateContent(templateKey);
+    setSelectedKey(templateKey);
+    setSpreadsheetData(content.spreadsheetData);
+    setEditorMode(true);
+    setShowPreview(false);
+  }, [getTemplateContent]);
+
   // 生成预览 HTML
-  const previewHtml = useMemo(() => {
+  const generatePreviewHtml = useCallback(() => {
     if (!selectedKey) return "";
     const def = getTemplateDefinition(selectedKey);
     if (!def) return "";
     const exampleData = generateExampleContext(def);
     const ctx = createPrintContext(companyInfo || {}, exampleData);
+    const htmlContent = spreadsheetToRenderableHtml(spreadsheetData);
     return buildPrintDocument({
-      htmlContent: editingHtml,
-      cssContent: editingCss,
+      htmlContent,
+      cssContent: "",
       context: ctx,
-      paperSize: editingPaperSize,
-      orientation: editingOrientation,
-      marginTop: editingMargins.top,
-      marginRight: editingMargins.right,
-      marginBottom: editingMargins.bottom,
-      marginLeft: editingMargins.left,
+      paperSize: spreadsheetData.paperSize,
+      orientation: spreadsheetData.orientation,
+      marginTop: spreadsheetData.marginTop,
+      marginRight: spreadsheetData.marginRight,
+      marginBottom: spreadsheetData.marginBottom,
+      marginLeft: spreadsheetData.marginLeft,
     });
-  }, [selectedKey, editingHtml, editingCss, editingPaperSize, editingOrientation, editingMargins, companyInfo]);
+  }, [selectedKey, spreadsheetData, companyInfo]);
 
-  // 更新 iframe 预览
-  useEffect(() => {
-    if (!editOpen || !previewHtml) return;
-    const writeToIframe = () => {
+  // 预览
+  const handlePreview = useCallback(() => {
+    setShowPreview(true);
+    setTimeout(() => {
       if (previewRef.current) {
         const doc = previewRef.current.contentDocument;
         if (doc) {
           doc.open();
-          doc.write(previewHtml);
+          doc.write(generatePreviewHtml());
           doc.close();
         }
       }
-    };
-    // 延迟写入确保 Dialog 动画完成后 iframe 已挂载
-    const timer = setTimeout(writeToIframe, 100);
-    return () => clearTimeout(timer);
-  }, [previewHtml, editOpen]);
+    }, 100);
+  }, [generatePreviewHtml]);
 
-  // 打开编辑
-  const handleEdit = (templateKey: string) => {
-    const content = getTemplateContent(templateKey);
-    setSelectedKey(templateKey);
-    setEditingHtml(content.htmlContent);
-    setEditingCss(content.cssContent);
-    setEditingName(content.name);
-    setEditingDesc(content.description);
-    setEditingPaperSize(content.paperSize);
-    setEditingOrientation(content.orientation);
-    setEditingMargins({
-      top: content.marginTop,
-      right: content.marginRight,
-      bottom: content.marginBottom,
-      left: content.marginLeft,
-    });
-    setEditorTab("html");
-    setEditOpen(true);
-    setEditFullscreen(false);
-  };
+  // 打印
+  const handlePrint = useCallback(() => {
+    const html = generatePreviewHtml();
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 600);
+    }
+  }, [generatePreviewHtml]);
 
-  // 预览打印
-  const handlePreviewPrint = () => {
+  // 保存
+  const handleSave = useCallback(() => {
     if (!selectedKey) return;
     const def = getTemplateDefinition(selectedKey);
     if (!def) return;
-    const exampleData = generateExampleContext(def);
-    const ctx = createPrintContext(companyInfo || {}, exampleData);
-    executePrint({
-      htmlContent: editingHtml,
-      cssContent: editingCss,
-      context: ctx,
-      paperSize: editingPaperSize,
-      orientation: editingOrientation,
-      marginTop: editingMargins.top,
-      marginRight: editingMargins.right,
-      marginBottom: editingMargins.bottom,
-      marginLeft: editingMargins.left,
-    });
-  };
-
-  // 保存到后端
-  const handleSave = () => {
-    if (!selectedKey) return;
-    const def = getTemplateDefinition(selectedKey);
-    if (!def) return;
+    // 将 SpreadsheetData 序列化为 JSON 存储到 htmlContent 字段
     upsertMutation.mutate({
       templateKey: selectedKey,
-      name: editingName,
-      description: editingDesc,
+      name: def.name,
+      description: def.description || "",
       module: def.module,
-      htmlContent: editingHtml,
-      cssContent: editingCss,
-      paperSize: editingPaperSize,
-      orientation: editingOrientation,
-      marginTop: editingMargins.top,
-      marginRight: editingMargins.right,
-      marginBottom: editingMargins.bottom,
-      marginLeft: editingMargins.left,
+      htmlContent: JSON.stringify(spreadsheetData),
+      cssContent: "",
+      paperSize: spreadsheetData.paperSize,
+      orientation: spreadsheetData.orientation,
+      marginTop: spreadsheetData.marginTop,
+      marginRight: spreadsheetData.marginRight,
+      marginBottom: spreadsheetData.marginBottom,
+      marginLeft: spreadsheetData.marginLeft,
     });
-  };
+  }, [selectedKey, spreadsheetData, upsertMutation]);
 
   // 恢复默认
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     if (!selectedKey) return;
-    const def = getTemplateDefinition(selectedKey);
-    if (!def) return;
-    // 删除后端记录
     deleteMutation.mutate({ templateKey: selectedKey });
-    // 恢复编辑器内容
-    setEditingHtml(def.defaultHtml);
-    setEditingCss(def.defaultCss);
-    setEditingName(def.name);
-    setEditingDesc(def.description || "");
-    setEditingPaperSize("A4");
-    setEditingOrientation("portrait");
-    setEditingMargins({ top: 20, right: 20, bottom: 20, left: 20 });
-  };
+    setSpreadsheetData(getDefaultSpreadsheetData(selectedKey));
+  }, [selectedKey, deleteMutation]);
 
-  // 复制变量到剪贴板
-  const copyVariable = (varKey: string) => {
-    navigator.clipboard.writeText(`{{${varKey}}}`);
-    toast.success(`已复制 {{${varKey}}}`);
-  };
+  // 返回列表
+  const handleBack = useCallback(() => {
+    setEditorMode(false);
+    setSelectedKey(null);
+    setShowPreview(false);
+  }, []);
+
+  // 字段分组
+  const fieldGroups = useMemo(() => {
+    if (!selectedKey) return [];
+    return variablesToFieldGroups(selectedKey);
+  }, [selectedKey]);
 
   // 按模块分组
   const moduleGroups = useMemo(() => {
@@ -269,8 +660,57 @@ export default function PrintTemplatesPage() {
     return groups;
   }, []);
 
-  const selectedDef = selectedKey ? getTemplateDefinition(selectedKey) : null;
+  // ==================== 编辑器模式 ====================
+  if (editorMode && selectedKey) {
+    const def = getTemplateDefinition(selectedKey);
+    return (
+      <div className="h-screen flex flex-col">
+        {showPreview ? (
+          // 预览模式
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between px-4 py-2 border-b bg-gray-50">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)} className="gap-1">
+                  ← 返回编辑
+                </Button>
+                <span className="text-sm font-medium">预览 — {def?.name}</span>
+              </div>
+              <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1 text-xs">
+                <Printer className="h-3.5 w-3.5" /> 打印
+              </Button>
+            </div>
+            <div className="flex-1 bg-gray-200 overflow-auto flex justify-center p-8">
+              <div className="bg-white shadow-lg" style={{ width: "210mm", minHeight: "297mm" }}>
+                <iframe
+                  ref={previewRef}
+                  className="w-full border-0"
+                  style={{ height: "297mm", minHeight: "297mm" }}
+                  title="打印预览"
+                  sandbox="allow-same-origin"
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          // 编辑器模式
+          <SpreadsheetEditor
+            data={spreadsheetData}
+            onChange={setSpreadsheetData}
+            fieldGroups={fieldGroups}
+            templateName={def?.name || "模板"}
+            onSave={handleSave}
+            onPreview={handlePreview}
+            onPrint={handlePrint}
+            onBack={handleBack}
+            onReset={handleReset}
+            saving={upsertMutation.isPending}
+          />
+        )}
+      </div>
+    );
+  }
 
+  // ==================== 列表模式 ====================
   return (
     <ERPLayout>
       <div className="p-6 max-w-6xl mx-auto">
@@ -282,7 +722,7 @@ export default function PrintTemplatesPage() {
           <div>
             <h1 className="text-xl font-bold">打印模板管理</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              所见即所得 — 编辑器中的预览效果与实际打印输出完全一致
+              类 Excel 可视化编辑器 — 拖拽字段到表格中，所见即所得
             </p>
           </div>
         </div>
@@ -293,12 +733,10 @@ export default function PrintTemplatesPage() {
             <div className="flex gap-3 text-sm text-blue-800">
               <FileText className="h-4 w-4 mt-0.5 shrink-0" />
               <div>
-                <span className="font-medium">模板语法说明：</span>
-                使用 <code className="bg-blue-100 px-1 rounded">{"{{变量名}}"}</code> 插入数据，
-                <code className="bg-blue-100 px-1 rounded">{"{{#each items}}...{{/each}}"}</code> 循环明细行，
-                <code className="bg-blue-100 px-1 rounded">{"{{#if 变量}}...{{/if}}"}</code> 条件显示，
-                <code className="bg-blue-100 px-1 rounded">{"{{金额 | currency}}"}</code> 格式化为货币。
-                模板数据保存在服务器，多端同步。
+                <span className="font-medium">操作说明：</span>
+                点击"编辑模板"进入类 Excel 编辑器。左侧字段面板可拖拽字段到表格单元格中，
+                使用 <code className="bg-blue-100 px-1 rounded">{"${字段名}"}</code> 语法插入变量。
+                支持合并单元格、字体格式化、边框设置等。编辑器中的效果与打印输出完全一致。
               </div>
             </div>
           </CardContent>
@@ -325,7 +763,7 @@ export default function PrintTemplatesPage() {
                             <Icon className="h-4 w-4" />
                           </div>
                           <div>
-                            <CardTitle className="text-sm font-semibold">{content.name}</CardTitle>
+                            <CardTitle className="text-sm font-semibold">{def.name}</CardTitle>
                             <p className="text-xs text-muted-foreground mt-0.5">{MODULE_LABELS[def.module]}</p>
                           </div>
                         </div>
@@ -337,9 +775,9 @@ export default function PrintTemplatesPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="pt-0">
-                      <p className="text-xs text-muted-foreground mb-3 leading-relaxed">{content.description}</p>
+                      <p className="text-xs text-muted-foreground mb-3 leading-relaxed">{def.description}</p>
                       <div className="mb-3">
-                        <p className="text-xs font-medium text-muted-foreground mb-1.5">可用变量：</p>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5">可用字段：</p>
                         <div className="flex flex-wrap gap-1">
                           {def.variables.filter(v => !v.key.startsWith("company.") && v.key !== "printTime" && v.key !== "printDate").slice(0, 5).map((v) => (
                             <Badge key={v.key} variant="secondary" className="text-xs px-1.5 py-0">
@@ -370,226 +808,6 @@ export default function PrintTemplatesPage() {
             </div>
           </div>
         ))}
-
-        {/* ==================== 编辑器对话框 ==================== */}
-        <Dialog open={editOpen} onOpenChange={(open) => { if (!open) { setEditOpen(false); setEditFullscreen(false); } }}>
-          <DialogContent className={editFullscreen ? "max-w-[98vw] w-[98vw] max-h-[98vh] h-[98vh]" : "max-w-[95vw] w-[1400px] max-h-[92vh]"}>
-            <DialogHeader>
-              <div className="flex items-center justify-between">
-                <DialogTitle className="flex items-center gap-2">
-                  <Edit className="h-4 w-4" />
-                  编辑打印模板 — {editingName}
-                </DialogTitle>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditFullscreen(!editFullscreen)}>
-                    <Maximize2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </DialogHeader>
-
-            <div className="flex gap-4" style={{ height: editFullscreen ? "calc(98vh - 140px)" : "calc(92vh - 160px)" }}>
-              {/* 左侧：编辑器 */}
-              <div className="w-[55%] flex flex-col min-w-0">
-                {/* 基本信息 */}
-                <div className="grid grid-cols-4 gap-3 mb-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">模板名称</Label>
-                    <Input value={editingName} onChange={(e) => setEditingName(e.target.value)} className="h-8 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">纸张大小</Label>
-                    <Select value={editingPaperSize} onValueChange={setEditingPaperSize}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="A4">A4</SelectItem>
-                        <SelectItem value="A5">A5</SelectItem>
-                        <SelectItem value="Letter">Letter</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">打印方向</Label>
-                    <Select value={editingOrientation} onValueChange={setEditingOrientation}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="portrait">纵向</SelectItem>
-                        <SelectItem value="landscape">横向</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">页边距 (上/右/下/左)</Label>
-                    <div className="flex gap-1">
-                      {(["top", "right", "bottom", "left"] as const).map((side) => (
-                        <Input
-                          key={side}
-                          type="number"
-                          value={editingMargins[side]}
-                          onChange={(e) => setEditingMargins(prev => ({ ...prev, [side]: parseInt(e.target.value) || 0 }))}
-                          className="h-8 text-xs w-14 text-center"
-                          min={0}
-                          max={100}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 编辑器标签页 */}
-                <Tabs value={editorTab} onValueChange={setEditorTab} className="flex-1 flex flex-col min-h-0">
-                  <TabsList className="h-8 w-fit">
-                    <TabsTrigger value="html" className="text-xs gap-1 h-7"><Code className="h-3 w-3" /> HTML 模板</TabsTrigger>
-                    <TabsTrigger value="css" className="text-xs gap-1 h-7"><Palette className="h-3 w-3" /> CSS 样式</TabsTrigger>
-                    <TabsTrigger value="variables" className="text-xs gap-1 h-7"><Settings2 className="h-3 w-3" /> 可用变量</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="html" className="flex-1 mt-2 min-h-0">
-                    <Textarea
-                      value={editingHtml}
-                      onChange={(e) => setEditingHtml(e.target.value)}
-                      className="font-mono text-xs h-full resize-none"
-                      placeholder="在此编写 HTML 模板..."
-                      spellCheck={false}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="css" className="flex-1 mt-2 min-h-0">
-                    <Textarea
-                      value={editingCss}
-                      onChange={(e) => setEditingCss(e.target.value)}
-                      className="font-mono text-xs h-full resize-none"
-                      placeholder="在此编写 CSS 样式..."
-                      spellCheck={false}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="variables" className="flex-1 mt-2 min-h-0 overflow-y-auto">
-                    {selectedDef && (
-                      <div className="space-y-4">
-                        {/* 公司变量 */}
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground mb-2">公司信息变量</h4>
-                          <div className="flex flex-wrap gap-1.5">
-                            {selectedDef.variables.filter(v => v.key.startsWith("company.") || v.key === "printTime" || v.key === "printDate").map((v) => (
-                              <Badge
-                                key={v.key}
-                                variant="outline"
-                                className="text-xs cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
-                                onClick={() => copyVariable(v.key)}
-                              >
-                                <Copy className="h-2.5 w-2.5 mr-1" />
-                                {`{{${v.key}}}`} <span className="ml-1 text-muted-foreground">{v.label}</span>
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 业务变量 */}
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground mb-2">业务数据变量</h4>
-                          <div className="space-y-2">
-                            {selectedDef.variables.filter(v => !v.key.startsWith("company.") && v.key !== "printTime" && v.key !== "printDate").map((v) => (
-                              <div key={v.key} className="flex items-start gap-2">
-                                <Badge
-                                  variant="outline"
-                                  className="text-xs cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
-                                  onClick={() => copyVariable(v.key)}
-                                >
-                                  <Copy className="h-2.5 w-2.5 mr-1" />
-                                  {`{{${v.key}}}`}
-                                </Badge>
-                                <span className="text-xs text-muted-foreground">{v.label}</span>
-                                {v.type === "number" && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    支持 | currency / decimal2
-                                  </Badge>
-                                )}
-                                {v.type === "array" && v.children && (
-                                  <div className="ml-4 mt-1">
-                                    <p className="text-xs text-muted-foreground mb-1">
-                                      使用 <code className="bg-muted px-1 rounded">{`{{#each ${v.key}}}...{{/each}}`}</code> 循环，子变量：
-                                    </p>
-                                    <div className="flex flex-wrap gap-1">
-                                      {v.children.map((c) => (
-                                        <Badge
-                                          key={c.key}
-                                          variant="secondary"
-                                          className="text-xs cursor-pointer"
-                                          onClick={() => { navigator.clipboard.writeText(`{{${c.key}}}`); toast.success(`已复制 {{${c.key}}}`); }}
-                                        >
-                                          {`{{${c.key}}}`} {c.label}
-                                        </Badge>
-                                      ))}
-                                      <Badge variant="secondary" className="text-xs">
-                                        {"{{@number}}"} 序号
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 语法参考 */}
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground mb-2">语法参考</h4>
-                          <div className="bg-muted/50 rounded-lg p-3 text-xs font-mono space-y-1">
-                            <div><span className="text-blue-600">{"{{变量名}}"}</span> — 输出变量值</div>
-                            <div><span className="text-blue-600">{"{{金额 | currency}}"}</span> — 格式化为 ¥1,000.00</div>
-                            <div><span className="text-blue-600">{"{{数值 | decimal2}}"}</span> — 保留2位小数</div>
-                            <div><span className="text-blue-600">{"{{百分比 | percent}}"}</span> — 格式化为 65.0%</div>
-                            <div><span className="text-green-600">{"{{#each items}}"}...{"{{/each}}"}</span> — 循环数组</div>
-                            <div><span className="text-green-600">{"{{@number}}"}</span> — 循环序号（从1开始）</div>
-                            <div><span className="text-purple-600">{"{{#if 变量}}"}...{"{{else}}"}...{"{{/if}}"}</span> — 条件判断</div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </TabsContent>
-                </Tabs>
-              </div>
-
-              {/* 右侧：实时预览 */}
-              <div className="w-[45%] flex flex-col shrink-0 border rounded-lg overflow-hidden">
-                <div className="bg-muted px-3 py-2 text-xs text-muted-foreground flex items-center justify-between border-b">
-                  <span className="flex items-center gap-1.5">
-                    <Eye className="h-3.5 w-3.5" />
-                    实时预览（示例数据）
-                  </span>
-                  <div className="flex gap-1.5">
-                    <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={handlePreviewPrint}>
-                      <Printer className="h-3 w-3 mr-1" /> 打印预览
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex-1 bg-gray-100 overflow-auto p-2">
-                  <iframe
-                    ref={previewRef}
-                    className="w-full border-0 bg-white shadow-md"
-                    style={{
-                      height: "100%",
-                      minHeight: editingOrientation === "landscape" ? "500px" : "800px",
-                    }}
-                    title="打印预览"
-                    sandbox="allow-same-origin"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2 mt-2">
-              <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 mr-auto">
-                <RotateCcw className="h-3.5 w-3.5" /> 恢复默认
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => { setEditOpen(false); setEditFullscreen(false); }}>取消</Button>
-              <Button size="sm" onClick={handleSave} className="gap-1.5" disabled={upsertMutation.isPending}>
-                <Save className="h-3.5 w-3.5" /> {upsertMutation.isPending ? "保存中..." : "保存模板"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </ERPLayout>
   );
