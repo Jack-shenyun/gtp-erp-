@@ -6,6 +6,7 @@ import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableD
 import ERPLayout from "@/components/ERPLayout";
 import MaterialMultiSelect, { SelectedMaterial, Material } from "@/components/MaterialMultiSelect";
 import { ShoppingBag, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Layers, Printer, CheckCircle, XCircle, UserCheck } from "lucide-react";
+import { usePrintTemplate } from "@/hooks/usePrintTemplate";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,7 @@ const statusMap: Record<string, { label: string; variant: "outline" | "secondary
 };
 
 export default function PurchaseOrdersPage() {
+  const { print: templatePrint } = usePrintTemplate();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [formDialogOpen, setFormDialogOpen] = useState(false);
@@ -797,7 +799,27 @@ export default function PurchaseOrdersPage() {
             )}
             {selectedRecord.status === "approved" && (
               <Button size="sm" onClick={() => {
-                window.print();
+                templatePrint("purchase_order", {
+                  orderNo:       selectedRecord.orderNo,
+                  orderDate:     formatDate(selectedRecord.orderDate),
+                  deliveryDate:  formatDate(selectedRecord.expectedDate),
+                  supplierName:  selectedRecord.supplierName ?? "",
+                  contactPerson: selectedRecord.contactPerson ?? "",
+                  contactPhone:  selectedRecord.phone ?? "",
+                  paymentTerms:  "",
+                  status:        statusMap[selectedRecord.status]?.label ?? selectedRecord.status ?? "",
+                  totalAmount:   parseFloat(selectedRecord.totalAmount ?? "0"),
+                  remark:        selectedRecord.remark ?? "",
+                  items: detailItems.map((item: any) => ({
+                    productName:   item.materialName,
+                    productCode:   item.materialCode,
+                    specification: item.specification || "",
+                    quantity:      Number(item.quantity || 0),
+                    unit:          item.unit || "",
+                    unitPrice:     Number(item.unitPrice || 0),
+                    amount:        Number(item.amount || 0),
+                  })),
+                });
                 handleStatusChange(selectedRecord, "issued");
                 toast.success("采购订单已打印，状态已更新为「已下达」");
               }}>

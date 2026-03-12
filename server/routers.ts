@@ -39,6 +39,7 @@ import {
   getDepartments, getDepartmentById, createDepartment, updateDepartment, deleteDepartment,
   getCodeRules, createCodeRule, updateCodeRule, deleteCodeRule,
   getCompanyInfo, updateCompanyInfo,
+  getPrintTemplates, getPrintTemplateByKey, upsertPrintTemplate, deletePrintTemplate as deletePrintTemplateDb,
   getWorkflowFormCatalog, getWorkflowFormCatalogItem, setWorkflowFormCatalogApprovalEnabled,
   getWorkflowTemplates, getWorkflowTemplateById, createWorkflowTemplate, updateWorkflowTemplate, deleteWorkflowTemplate,
   getPersonnel, getPersonnelById, createPersonnel, updatePersonnel, deletePersonnel,
@@ -2969,6 +2970,44 @@ export const appRouter = router({
         });
         const updated = await updateCompanyInfo({ logoUrl: saved.filePath });
         return { logoUrl: saved.filePath, companyInfo: updated };
+      }),
+  }),
+
+  // ==================== 打印模板管理 ====================
+  printTemplates: router({
+    list: protectedProcedure
+      .input(z.object({ module: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getPrintTemplates(input ?? undefined);
+      }),
+    getByKey: protectedProcedure
+      .input(z.object({ templateKey: z.string() }))
+      .query(async ({ input }) => {
+        return await getPrintTemplateByKey(input.templateKey);
+      }),
+    upsert: protectedProcedure
+      .input(z.object({
+        templateKey: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        module: z.string(),
+        htmlContent: z.string(),
+        cssContent: z.string().optional(),
+        paperSize: z.string().optional(),
+        orientation: z.string().optional(),
+        marginTop: z.number().optional(),
+        marginRight: z.number().optional(),
+        marginBottom: z.number().optional(),
+        marginLeft: z.number().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await upsertPrintTemplate({ ...input, updatedBy: ctx.user?.id });
+      }),
+    delete: adminProcedure
+      .input(z.object({ templateKey: z.string() }))
+      .mutation(async ({ input }) => {
+        await deletePrintTemplateDb(input.templateKey);
+        return { success: true };
       }),
   }),
 

@@ -43,7 +43,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { usePermission } from "@/hooks/usePermission";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { DeliveryNotePrint } from "@/components/print";
+import { usePrintTemplate } from "@/hooks/usePrintTemplate";
 
 // ==================== 常量 ====================
 const typeMap: Record<string, string> = {
@@ -138,7 +138,7 @@ export default function OutboundPage() {
   const [detailOpen, setDetailOpen]           = useState(false);
   const [editingRecord, setEditingRecord]     = useState<OutboundRecord | null>(null);
   const [viewingRecord, setViewingRecord]     = useState<OutboundRecord | null>(null);
-  const [printDeliveryOpen, setPrintDeliveryOpen] = useState(false);
+  const { print: templatePrint } = usePrintTemplate();
 
   // ---- 搜索 & 筛选 ----
   const [searchText, setSearchText] = useState("");
@@ -1394,7 +1394,26 @@ export default function OutboundPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setPrintDeliveryOpen(true)}
+                        onClick={() => {
+                          const o = getRelatedOrder(viewingRecord.relatedOrderId);
+                          templatePrint("delivery_note", {
+                            orderNumber: viewingRecord.documentNo || `OUT-${viewingRecord.id}`,
+                            deliveryDate: viewingRecord.createdAt
+                              ? new Date(viewingRecord.createdAt).toISOString().split("T")[0]
+                              : new Date().toISOString().split("T")[0],
+                            customerName: o?.customerName || "-",
+                            shippingAddress: o?.shippingAddress || "",
+                            shippingContact: o?.shippingContact || "",
+                            shippingPhone: o?.shippingPhone || "",
+                            items: [{
+                              productName: viewingRecord.itemName,
+                              quantity: parseFloat(String(viewingRecord.quantity || 0)),
+                              unit: viewingRecord.unit || "件",
+                              batchNumber: viewingRecord.batchNo || "",
+                            }],
+                            notes: viewingRecord.remark || "",
+                          });
+                        }}
                       >
                         <Printer className="h-4 w-4 mr-1.5" />打印发货单
                       </Button>
@@ -1426,44 +1445,7 @@ export default function OutboundPage() {
           })()}
       </DraggableDialog>
 
-      {/* ==================== 打印发货单 ==================== */}
-      {viewingRecord && (
-        <DeliveryNotePrint
-          open={printDeliveryOpen}
-          onClose={() => setPrintDeliveryOpen(false)}
-          order={{
-            orderNumber: viewingRecord.documentNo || `OUT-${viewingRecord.id}`,
-            deliveryDate: viewingRecord.createdAt
-              ? new Date(viewingRecord.createdAt).toISOString().split("T")[0]
-              : new Date().toISOString().split("T")[0],
-            customerName: (() => {
-              const o = getRelatedOrder(viewingRecord.relatedOrderId);
-              return o?.customerName || "-";
-            })(),
-            shippingAddress: (() => {
-              const o = getRelatedOrder(viewingRecord.relatedOrderId);
-              return o?.shippingAddress || "";
-            })(),
-            shippingContact: (() => {
-              const o = getRelatedOrder(viewingRecord.relatedOrderId);
-              return o?.shippingContact || "";
-            })(),
-            shippingPhone: (() => {
-              const o = getRelatedOrder(viewingRecord.relatedOrderId);
-              return o?.shippingPhone || "";
-            })(),
-            items: [
-              {
-                productName: viewingRecord.itemName,
-                quantity: parseFloat(String(viewingRecord.quantity || 0)),
-                unit: viewingRecord.unit || "件",
-                batchNumber: viewingRecord.batchNo || undefined,
-              },
-            ],
-            notes: viewingRecord.remark || "",
-          }}
-        />
-      )}
+      {/* 打印已通过统一打印引擎 (usePrintTemplate) 实现 */}
     </ERPLayout>
   );
 }

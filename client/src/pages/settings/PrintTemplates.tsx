@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -27,474 +29,241 @@ import {
   Receipt,
   Factory,
   Package,
-  Tag,
   ClipboardCheck,
+  Copy,
+  Code,
+  Palette,
+  Settings2,
+  Maximize2,
+  X,
 } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import {
+  TEMPLATE_DEFINITIONS,
+  getTemplateDefinition,
+  generateExampleContext,
+} from "@/lib/printTemplateDefaults";
+import {
+  buildPrintDocument,
+  createPrintContext,
+  executePrint,
+} from "@/lib/printEngine";
 
-// ==================== 打印模板定义 ====================
+// ==================== 图标映射 ====================
+const ICON_MAP: Record<string, React.ElementType> = {
+  sales_order: ShoppingCart,
+  delivery_note: Truck,
+  receipt: Receipt,
+  purchase_order: Package,
+  production_order: Factory,
+  iqc_inspection: ClipboardCheck,
+};
 
-interface PrintTemplateItem {
-  id: string;
-  name: string;
-  module: string;
-  moduleLabel: string;
-  description: string;
-  icon: React.ElementType;
-  color: string;
-  fields: TemplateField[];
-  defaultCss: string;
-  defaultHtml: string;
-}
+const COLOR_MAP: Record<string, string> = {
+  sales: "bg-emerald-50 border-emerald-200 text-emerald-700",
+  purchase: "bg-cyan-50 border-cyan-200 text-cyan-700",
+  production: "bg-orange-50 border-orange-200 text-orange-700",
+  quality: "bg-violet-50 border-violet-200 text-violet-700",
+};
 
-interface TemplateField {
-  key: string;
-  label: string;
-  type: "text" | "number" | "date" | "table";
-  description: string;
-}
-
-const PRINT_TEMPLATES: PrintTemplateItem[] = [
-  {
-    id: "sales_order",
-    name: "销售订单",
-    module: "sales",
-    moduleLabel: "销售部",
-    description: "客户销售订单打印，包含订单信息、产品明细、金额汇总",
-    icon: ShoppingCart,
-    color: "bg-emerald-50 border-emerald-200 text-emerald-700",
-    fields: [
-      { key: "orderNumber", label: "订单编号", type: "text", description: "销售订单唯一编号" },
-      { key: "orderDate", label: "订单日期", type: "date", description: "下单日期" },
-      { key: "customerName", label: "客户名称", type: "text", description: "客户全称" },
-      { key: "deliveryDate", label: "交货日期", type: "date", description: "预计交货日期" },
-      { key: "shippingAddress", label: "收货地址", type: "text", description: "收货详细地址" },
-      { key: "paymentMethod", label: "付款方式", type: "text", description: "结算方式" },
-      { key: "totalAmount", label: "订单总额", type: "number", description: "含税总金额" },
-      { key: "items", label: "产品明细", type: "table", description: "产品名称、规格、数量、单价、金额" },
-      { key: "notes", label: "备注", type: "text", description: "订单备注信息" },
-    ],
-    defaultCss: `body { font-family: 'SimSun', Arial, sans-serif; font-size: 12px; color: #111; padding: 20px 28px; }
-.header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-.title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 16px; letter-spacing: 2px; }
-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 11px; }
-th { background: #f5f5f5; font-weight: bold; }
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-.info-row { display: flex; gap: 8px; }
-.info-label { color: #666; min-width: 80px; }
-.total { text-align: right; font-size: 14px; font-weight: bold; margin-top: 8px; }
-.footer { margin-top: 24px; display: flex; justify-content: space-between; }
-.sign-box { border-top: 1px solid #111; width: 120px; text-align: center; padding-top: 4px; font-size: 11px; }`,
-    defaultHtml: `<div class="header">
-  <div>{{companyLogo}}</div>
-  <div style="text-align:right">
-    <div style="font-size:16px;font-weight:bold">{{companyName}}</div>
-    <div style="font-size:11px;color:#666">{{companyAddress}}</div>
-  </div>
-</div>
-<div class="title">销 售 订 单</div>
-<div class="info-grid">
-  <div class="info-row"><span class="info-label">订单编号：</span><span>{{orderNumber}}</span></div>
-  <div class="info-row"><span class="info-label">订单日期：</span><span>{{orderDate}}</span></div>
-  <div class="info-row"><span class="info-label">客户名称：</span><span>{{customerName}}</span></div>
-  <div class="info-row"><span class="info-label">交货日期：</span><span>{{deliveryDate}}</span></div>
-  <div class="info-row"><span class="info-label">收货地址：</span><span>{{shippingAddress}}</span></div>
-  <div class="info-row"><span class="info-label">付款方式：</span><span>{{paymentMethod}}</span></div>
-</div>
-<table>
-  <thead><tr><th>产品名称</th><th>产品编码</th><th>规格型号</th><th>数量</th><th>单价</th><th>金额</th></tr></thead>
-  <tbody>{{itemRows}}</tbody>
-</table>
-<div class="total">合计金额：¥ {{totalAmount}}</div>
-<div style="margin-top:8px;color:#666;font-size:11px">备注：{{notes}}</div>
-<div class="footer">
-  <div class="sign-box">销售员</div>
-  <div class="sign-box">审核</div>
-  <div class="sign-box">客户确认</div>
-</div>`,
-  },
-  {
-    id: "delivery_note",
-    name: "发货单",
-    module: "sales",
-    moduleLabel: "销售部 / 仓库",
-    description: "出库发货单打印，包含收货信息和发货产品明细",
-    icon: Truck,
-    color: "bg-blue-50 border-blue-200 text-blue-700",
-    fields: [
-      { key: "orderNumber", label: "订单编号", type: "text", description: "关联销售订单号" },
-      { key: "deliveryDate", label: "发货日期", type: "date", description: "实际发货日期" },
-      { key: "customerName", label: "客户名称", type: "text", description: "收货客户" },
-      { key: "shippingAddress", label: "收货地址", type: "text", description: "收货详细地址" },
-      { key: "shippingContact", label: "收货联系人", type: "text", description: "收货人姓名" },
-      { key: "shippingPhone", label: "联系电话", type: "text", description: "收货联系电话" },
-      { key: "items", label: "发货明细", type: "table", description: "产品名称、规格、数量、单位" },
-    ],
-    defaultCss: `body { font-family: 'SimSun', Arial, sans-serif; font-size: 12px; color: #111; padding: 20px 28px; }
-.header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-.title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 16px; letter-spacing: 2px; }
-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 11px; }
-th { background: #f5f5f5; font-weight: bold; }
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-.info-row { display: flex; gap: 8px; }
-.info-label { color: #666; min-width: 80px; }
-.footer { margin-top: 24px; display: flex; justify-content: space-between; }
-.sign-box { border-top: 1px solid #111; width: 120px; text-align: center; padding-top: 4px; font-size: 11px; }`,
-    defaultHtml: `<div class="header">
-  <div>{{companyLogo}}</div>
-  <div style="text-align:right">
-    <div style="font-size:16px;font-weight:bold">{{companyName}}</div>
-  </div>
-</div>
-<div class="title">发 货 单</div>
-<div class="info-grid">
-  <div class="info-row"><span class="info-label">订单编号：</span><span>{{orderNumber}}</span></div>
-  <div class="info-row"><span class="info-label">发货日期：</span><span>{{deliveryDate}}</span></div>
-  <div class="info-row"><span class="info-label">客户名称：</span><span>{{customerName}}</span></div>
-  <div class="info-row"><span class="info-label">联系人：</span><span>{{shippingContact}}</span></div>
-  <div class="info-row"><span class="info-label">联系电话：</span><span>{{shippingPhone}}</span></div>
-  <div class="info-row"><span class="info-label">收货地址：</span><span>{{shippingAddress}}</span></div>
-</div>
-<table>
-  <thead><tr><th>产品名称</th><th>产品编码</th><th>规格型号</th><th>数量</th><th>单位</th></tr></thead>
-  <tbody>{{itemRows}}</tbody>
-</table>
-<div class="footer">
-  <div class="sign-box">发货员</div>
-  <div class="sign-box">收货确认</div>
-  <div class="sign-box">备注</div>
-</div>`,
-  },
-  {
-    id: "receipt",
-    name: "收据",
-    module: "sales",
-    moduleLabel: "销售部",
-    description: "付款收据打印，包含收款信息和金额明细",
-    icon: Receipt,
-    color: "bg-violet-50 border-violet-200 text-violet-700",
-    fields: [
-      { key: "receiptNumber", label: "收据编号", type: "text", description: "收据唯一编号" },
-      { key: "receiptDate", label: "收款日期", type: "date", description: "实际收款日期" },
-      { key: "customerName", label: "客户名称", type: "text", description: "付款客户" },
-      { key: "paymentMethod", label: "付款方式", type: "text", description: "现金/转账/支票等" },
-      { key: "totalAmount", label: "应收金额", type: "number", description: "订单总金额" },
-      { key: "paidAmount", label: "实收金额", type: "number", description: "本次实际收款金额" },
-      { key: "remainingAmount", label: "未收金额", type: "number", description: "剩余未收款金额" },
-    ],
-    defaultCss: `body { font-family: 'SimSun', Arial, sans-serif; font-size: 12px; color: #111; padding: 20px 28px; }
-.header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-.title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 16px; letter-spacing: 2px; }
-.amount-box { border: 2px solid #111; padding: 12px; margin: 16px 0; text-align: center; }
-.amount-big { font-size: 28px; font-weight: bold; color: #c00; }
-.info-row { display: flex; gap: 8px; margin-bottom: 6px; }
-.info-label { color: #666; min-width: 80px; }
-.footer { margin-top: 24px; display: flex; justify-content: space-between; }
-.sign-box { border-top: 1px solid #111; width: 120px; text-align: center; padding-top: 4px; font-size: 11px; }`,
-    defaultHtml: `<div class="header">
-  <div>{{companyLogo}}</div>
-  <div style="text-align:right"><div style="font-size:16px;font-weight:bold">{{companyName}}</div></div>
-</div>
-<div class="title">收 据</div>
-<div class="info-row"><span class="info-label">收据编号：</span><span>{{receiptNumber}}</span></div>
-<div class="info-row"><span class="info-label">收款日期：</span><span>{{receiptDate}}</span></div>
-<div class="info-row"><span class="info-label">客户名称：</span><span>{{customerName}}</span></div>
-<div class="info-row"><span class="info-label">付款方式：</span><span>{{paymentMethod}}</span></div>
-<div class="amount-box">
-  <div style="font-size:12px;color:#666;margin-bottom:4px">实收金额</div>
-  <div class="amount-big">¥ {{paidAmount}}</div>
-</div>
-<div class="info-row"><span class="info-label">应收金额：</span><span>¥ {{totalAmount}}</span></div>
-<div class="info-row"><span class="info-label">未收金额：</span><span>¥ {{remainingAmount}}</span></div>
-<div class="footer">
-  <div class="sign-box">收款人</div>
-  <div class="sign-box">财务审核</div>
-  <div class="sign-box">客户签字</div>
-</div>`,
-  },
-  {
-    id: "purchase_order",
-    name: "采购订单",
-    module: "purchase",
-    moduleLabel: "采购部",
-    description: "采购订单打印下达，包含供应商信息和采购明细",
-    icon: Package,
-    color: "bg-cyan-50 border-cyan-200 text-cyan-700",
-    fields: [
-      { key: "orderNo", label: "采购单号", type: "text", description: "采购订单编号" },
-      { key: "orderDate", label: "下单日期", type: "date", description: "采购下单日期" },
-      { key: "supplierName", label: "供应商名称", type: "text", description: "供应商全称" },
-      { key: "deliveryDate", label: "要求交货期", type: "date", description: "要求到货日期" },
-      { key: "totalAmount", label: "采购总额", type: "number", description: "含税总金额" },
-      { key: "items", label: "采购明细", type: "table", description: "物料名称、规格、数量、单价、金额" },
-      { key: "remark", label: "备注", type: "text", description: "特殊要求或备注" },
-    ],
-    defaultCss: `body { font-family: 'SimSun', Arial, sans-serif; font-size: 12px; color: #111; padding: 20px 28px; }
-.header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-.title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 16px; letter-spacing: 2px; }
-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 11px; }
-th { background: #f5f5f5; font-weight: bold; }
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-.info-row { display: flex; gap: 8px; }
-.info-label { color: #666; min-width: 80px; }
-.total { text-align: right; font-size: 14px; font-weight: bold; margin-top: 8px; }
-.footer { margin-top: 24px; display: flex; justify-content: space-between; }
-.sign-box { border-top: 1px solid #111; width: 120px; text-align: center; padding-top: 4px; font-size: 11px; }`,
-    defaultHtml: `<div class="header">
-  <div>{{companyLogo}}</div>
-  <div style="text-align:right"><div style="font-size:16px;font-weight:bold">{{companyName}}</div></div>
-</div>
-<div class="title">采 购 订 单</div>
-<div class="info-grid">
-  <div class="info-row"><span class="info-label">采购单号：</span><span>{{orderNo}}</span></div>
-  <div class="info-row"><span class="info-label">下单日期：</span><span>{{orderDate}}</span></div>
-  <div class="info-row"><span class="info-label">供应商：</span><span>{{supplierName}}</span></div>
-  <div class="info-row"><span class="info-label">要求交货期：</span><span>{{deliveryDate}}</span></div>
-</div>
-<table>
-  <thead><tr><th>物料名称</th><th>规格型号</th><th>数量</th><th>单位</th><th>单价</th><th>金额</th></tr></thead>
-  <tbody>{{itemRows}}</tbody>
-</table>
-<div class="total">合计金额：¥ {{totalAmount}}</div>
-<div style="margin-top:8px;color:#666;font-size:11px">备注：{{remark}}</div>
-<div class="footer">
-  <div class="sign-box">采购员</div>
-  <div class="sign-box">审核</div>
-  <div class="sign-box">供应商确认</div>
-</div>`,
-  },
-  {
-    id: "production_order",
-    name: "生产指令",
-    module: "production",
-    moduleLabel: "生产部",
-    description: "生产工单打印，包含生产任务、物料、工序信息",
-    icon: Factory,
-    color: "bg-orange-50 border-orange-200 text-orange-700",
-    fields: [
-      { key: "orderNo", label: "工单编号", type: "text", description: "生产工单唯一编号" },
-      { key: "productName", label: "产品名称", type: "text", description: "生产产品名称" },
-      { key: "productCode", label: "产品编码", type: "text", description: "产品编码" },
-      { key: "plannedQty", label: "计划数量", type: "number", description: "本次生产计划数量" },
-      { key: "unit", label: "单位", type: "text", description: "计量单位" },
-      { key: "plannedStartDate", label: "计划开始日期", type: "date", description: "生产开始日期" },
-      { key: "plannedEndDate", label: "计划完成日期", type: "date", description: "生产完成日期" },
-      { key: "batchNo", label: "批次号", type: "text", description: "生产批次号" },
-      { key: "remark", label: "备注", type: "text", description: "生产注意事项" },
-    ],
-    defaultCss: `body { font-family: 'SimSun', Arial, sans-serif; font-size: 12px; color: #111; padding: 20px 28px; }
-.header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-.title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 16px; letter-spacing: 2px; }
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-.info-row { display: flex; gap: 8px; margin-bottom: 4px; }
-.info-label { color: #666; min-width: 90px; }
-.section-title { font-weight: bold; border-left: 3px solid #333; padding-left: 8px; margin: 12px 0 6px; }
-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 11px; }
-th { background: #f5f5f5; font-weight: bold; }
-.footer { margin-top: 24px; display: flex; justify-content: space-between; }
-.sign-box { border-top: 1px solid #111; width: 120px; text-align: center; padding-top: 4px; font-size: 11px; }`,
-    defaultHtml: `<div class="header">
-  <div>{{companyLogo}}</div>
-  <div style="text-align:right"><div style="font-size:16px;font-weight:bold">{{companyName}}</div></div>
-</div>
-<div class="title">生 产 指 令</div>
-<div class="info-grid">
-  <div class="info-row"><span class="info-label">工单编号：</span><span>{{orderNo}}</span></div>
-  <div class="info-row"><span class="info-label">产品名称：</span><span>{{productName}}</span></div>
-  <div class="info-row"><span class="info-label">产品编码：</span><span>{{productCode}}</span></div>
-  <div class="info-row"><span class="info-label">计划数量：</span><span>{{plannedQty}} {{unit}}</span></div>
-  <div class="info-row"><span class="info-label">批次号：</span><span>{{batchNo}}</span></div>
-  <div class="info-row"><span class="info-label">计划开始：</span><span>{{plannedStartDate}}</span></div>
-  <div class="info-row"><span class="info-label">计划完成：</span><span>{{plannedEndDate}}</span></div>
-</div>
-<div class="section-title">备注 / 注意事项</div>
-<div style="border:1px solid #ccc;padding:8px;min-height:40px;font-size:11px">{{remark}}</div>
-<div class="footer">
-  <div class="sign-box">生产主管</div>
-  <div class="sign-box">操作员</div>
-  <div class="sign-box">质检员</div>
-</div>`,
-  },
-  {
-    id: "iqc_inspection",
-    name: "来料检验报告",
-    module: "quality",
-    moduleLabel: "质量部",
-    description: "IQC 来料检验单打印，包含检验项目和结论",
-    icon: ClipboardCheck,
-    color: "bg-rose-50 border-rose-200 text-rose-700",
-    fields: [
-      { key: "inspectionNo", label: "检验编号", type: "text", description: "IQC 检验单编号" },
-      { key: "inspectionDate", label: "检验日期", type: "date", description: "实际检验日期" },
-      { key: "productName", label: "产品名称", type: "text", description: "被检验产品名称" },
-      { key: "supplierName", label: "供应商", type: "text", description: "来料供应商" },
-      { key: "batchNo", label: "批次号", type: "text", description: "来料批次号" },
-      { key: "receivedQty", label: "到货数量", type: "number", description: "本次到货数量" },
-      { key: "sampleQty", label: "抽样数量", type: "number", description: "实际抽样数量" },
-      { key: "result", label: "检验结论", type: "text", description: "合格/不合格/条件接收" },
-      { key: "items", label: "检验明细", type: "table", description: "检验项目、标准、实测值、结论" },
-    ],
-    defaultCss: `body { font-family: 'SimSun', Arial, sans-serif; font-size: 12px; color: #111; padding: 20px 28px; }
-.header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-.title { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 16px; letter-spacing: 2px; }
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-.info-row { display: flex; gap: 8px; margin-bottom: 4px; }
-.info-label { color: #666; min-width: 80px; }
-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 11px; }
-th { background: #f5f5f5; font-weight: bold; }
-.result-pass { color: #16a34a; font-weight: bold; }
-.result-fail { color: #dc2626; font-weight: bold; }
-.footer { margin-top: 24px; display: flex; justify-content: space-between; }
-.sign-box { border-top: 1px solid #111; width: 120px; text-align: center; padding-top: 4px; font-size: 11px; }`,
-    defaultHtml: `<div class="header">
-  <div>{{companyLogo}}</div>
-  <div style="text-align:right"><div style="font-size:16px;font-weight:bold">{{companyName}}</div></div>
-</div>
-<div class="title">来 料 检 验 报 告</div>
-<div class="info-grid">
-  <div class="info-row"><span class="info-label">检验编号：</span><span>{{inspectionNo}}</span></div>
-  <div class="info-row"><span class="info-label">检验日期：</span><span>{{inspectionDate}}</span></div>
-  <div class="info-row"><span class="info-label">产品名称：</span><span>{{productName}}</span></div>
-  <div class="info-row"><span class="info-label">供应商：</span><span>{{supplierName}}</span></div>
-  <div class="info-row"><span class="info-label">批次号：</span><span>{{batchNo}}</span></div>
-  <div class="info-row"><span class="info-label">到货数量：</span><span>{{receivedQty}}</span></div>
-  <div class="info-row"><span class="info-label">抽样数量：</span><span>{{sampleQty}}</span></div>
-  <div class="info-row"><span class="info-label">检验结论：</span><span class="result-pass">{{result}}</span></div>
-</div>
-<table>
-  <thead><tr><th>检验项目</th><th>检验标准</th><th>实测值</th><th>结论</th></tr></thead>
-  <tbody>{{itemRows}}</tbody>
-</table>
-<div class="footer">
-  <div class="sign-box">检验员</div>
-  <div class="sign-box">审核</div>
-  <div class="sign-box">批准</div>
-</div>`,
-  },
-  {
-    id: "udi_label",
-    name: "UDI 标签",
-    module: "udi",
-    moduleLabel: "UDI 管理",
-    description: "UDI 产品标签打印，包含条形码、二维码和产品信息",
-    icon: Tag,
-    color: "bg-amber-50 border-amber-200 text-amber-700",
-    fields: [
-      { key: "udiDi", label: "UDI-DI", type: "text", description: "设备标识符" },
-      { key: "udiPi", label: "UDI-PI", type: "text", description: "生产标识符" },
-      { key: "productName", label: "产品名称", type: "text", description: "产品名称" },
-      { key: "productCode", label: "产品编码", type: "text", description: "产品编码" },
-      { key: "batchNo", label: "批次号", type: "text", description: "生产批次号" },
-      { key: "productionDate", label: "生产日期", type: "date", description: "生产日期" },
-      { key: "expiryDate", label: "有效期", type: "date", description: "产品有效期" },
-      { key: "manufacturer", label: "生产厂家", type: "text", description: "生产企业名称" },
-    ],
-    defaultCss: `body { font-family: 'SimSun', Arial, sans-serif; font-size: 10px; color: #111; }
-.label { border: 1px solid #333; padding: 8px; width: 80mm; display: inline-block; }
-.label-title { font-size: 13px; font-weight: bold; text-align: center; margin-bottom: 6px; }
-.barcode-area { text-align: center; margin: 6px 0; background: #f5f5f5; padding: 8px; border: 1px dashed #ccc; font-size: 11px; }
-.info-row { display: flex; gap: 4px; margin-bottom: 2px; }
-.info-label { color: #666; min-width: 60px; font-size: 9px; }`,
-    defaultHtml: `<div class="label">
-  <div class="label-title">{{productName}}</div>
-  <div class="barcode-area">[ 条形码 / 二维码区域 ]<br/>{{udiDi}}</div>
-  <div class="info-row"><span class="info-label">产品编码：</span><span>{{productCode}}</span></div>
-  <div class="info-row"><span class="info-label">批次号：</span><span>{{batchNo}}</span></div>
-  <div class="info-row"><span class="info-label">生产日期：</span><span>{{productionDate}}</span></div>
-  <div class="info-row"><span class="info-label">有效期至：</span><span>{{expiryDate}}</span></div>
-  <div class="info-row"><span class="info-label">生产厂家：</span><span>{{manufacturer}}</span></div>
-</div>`,
-  },
-];
+const MODULE_LABELS: Record<string, string> = {
+  sales: "销售部",
+  purchase: "采购部",
+  production: "生产部",
+  quality: "质量部",
+};
 
 // ==================== 主页面组件 ====================
 
 export default function PrintTemplatesPage() {
-  const [selectedTemplate, setSelectedTemplate] = useState<PrintTemplateItem | null>(null);
+  // 编辑状态
   const [editOpen, setEditOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [editingCss, setEditingCss] = useState("");
+  const [editFullscreen, setEditFullscreen] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [editingHtml, setEditingHtml] = useState("");
+  const [editingCss, setEditingCss] = useState("");
   const [editingName, setEditingName] = useState("");
   const [editingDesc, setEditingDesc] = useState("");
-  // 本地存储自定义模板（后期可接后端）
-  const [customTemplates, setCustomTemplates] = useState<Record<string, { css: string; html: string; name: string; description: string }>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("erpPrintTemplates") || "{}");
-    } catch {
-      return {};
-    }
+  const [editingPaperSize, setEditingPaperSize] = useState("A4");
+  const [editingOrientation, setEditingOrientation] = useState("portrait");
+  const [editingMargins, setEditingMargins] = useState({ top: 20, right: 20, bottom: 20, left: 20 });
+  const [editorTab, setEditorTab] = useState("html");
+  const previewRef = useRef<HTMLIFrameElement>(null);
+
+  // 后端数据
+  const { data: savedTemplates, refetch } = trpc.printTemplates.list.useQuery();
+  const upsertMutation = trpc.printTemplates.upsert.useMutation({
+    onSuccess: () => { refetch(); toast.success("模板已保存到服务器"); },
+    onError: (err) => toast.error(`保存失败：${err.message}`),
   });
+  const deleteMutation = trpc.printTemplates.delete.useMutation({
+    onSuccess: () => { refetch(); toast.success("已恢复默认模板"); },
+    onError: (err) => toast.error(`重置失败：${err.message}`),
+  });
+  const { data: companyInfo } = trpc.companyInfo.get.useQuery();
 
-  const getTemplate = (t: PrintTemplateItem) => {
-    const custom = customTemplates[t.id];
+  // 获取模版内容（优先后端保存的，否则用默认）
+  const getTemplateContent = useCallback((templateKey: string) => {
+    const saved = savedTemplates?.find(t => t.templateKey === templateKey);
+    const def = getTemplateDefinition(templateKey);
+    if (saved) {
+      return {
+        htmlContent: saved.htmlContent,
+        cssContent: saved.cssContent || def?.defaultCss || "",
+        name: saved.name,
+        description: saved.description || def?.description || "",
+        paperSize: saved.paperSize || "A4",
+        orientation: saved.orientation || "portrait",
+        marginTop: saved.marginTop ?? 20,
+        marginRight: saved.marginRight ?? 20,
+        marginBottom: saved.marginBottom ?? 20,
+        marginLeft: saved.marginLeft ?? 20,
+        isCustomized: true,
+      };
+    }
     return {
-      css: custom?.css ?? t.defaultCss,
-      html: custom?.html ?? t.defaultHtml,
-      name: custom?.name ?? t.name,
-      description: custom?.description ?? t.description,
+      htmlContent: def?.defaultHtml || "",
+      cssContent: def?.defaultCss || "",
+      name: def?.name || "",
+      description: def?.description || "",
+      paperSize: "A4",
+      orientation: "portrait",
+      marginTop: 20,
+      marginRight: 20,
+      marginBottom: 20,
+      marginLeft: 20,
+      isCustomized: false,
     };
-  };
+  }, [savedTemplates]);
 
-  const handleEdit = (t: PrintTemplateItem) => {
-    const tpl = getTemplate(t);
-    setSelectedTemplate(t);
-    setEditingName(tpl.name);
-    setEditingDesc(tpl.description);
-    setEditingCss(tpl.css);
-    setEditingHtml(tpl.html);
+  // 生成预览 HTML
+  const previewHtml = useMemo(() => {
+    if (!selectedKey) return "";
+    const def = getTemplateDefinition(selectedKey);
+    if (!def) return "";
+    const exampleData = generateExampleContext(def);
+    const ctx = createPrintContext(companyInfo || {}, exampleData);
+    return buildPrintDocument({
+      htmlContent: editingHtml,
+      cssContent: editingCss,
+      context: ctx,
+      paperSize: editingPaperSize,
+      orientation: editingOrientation,
+      marginTop: editingMargins.top,
+      marginRight: editingMargins.right,
+      marginBottom: editingMargins.bottom,
+      marginLeft: editingMargins.left,
+    });
+  }, [selectedKey, editingHtml, editingCss, editingPaperSize, editingOrientation, editingMargins, companyInfo]);
+
+  // 更新 iframe 预览
+  useEffect(() => {
+    if (previewRef.current && previewHtml) {
+      const doc = previewRef.current.contentDocument;
+      if (doc) {
+        doc.open();
+        doc.write(previewHtml);
+        doc.close();
+      }
+    }
+  }, [previewHtml]);
+
+  // 打开编辑
+  const handleEdit = (templateKey: string) => {
+    const content = getTemplateContent(templateKey);
+    setSelectedKey(templateKey);
+    setEditingHtml(content.htmlContent);
+    setEditingCss(content.cssContent);
+    setEditingName(content.name);
+    setEditingDesc(content.description);
+    setEditingPaperSize(content.paperSize);
+    setEditingOrientation(content.orientation);
+    setEditingMargins({
+      top: content.marginTop,
+      right: content.marginRight,
+      bottom: content.marginBottom,
+      left: content.marginLeft,
+    });
+    setEditorTab("html");
     setEditOpen(true);
+    setEditFullscreen(false);
   };
 
-  const handlePreview = (t: PrintTemplateItem) => {
-    setSelectedTemplate(t);
-    setPreviewOpen(true);
+  // 预览打印
+  const handlePreviewPrint = () => {
+    if (!selectedKey) return;
+    const def = getTemplateDefinition(selectedKey);
+    if (!def) return;
+    const exampleData = generateExampleContext(def);
+    const ctx = createPrintContext(companyInfo || {}, exampleData);
+    executePrint({
+      htmlContent: editingHtml,
+      cssContent: editingCss,
+      context: ctx,
+      paperSize: editingPaperSize,
+      orientation: editingOrientation,
+      marginTop: editingMargins.top,
+      marginRight: editingMargins.right,
+      marginBottom: editingMargins.bottom,
+      marginLeft: editingMargins.left,
+    });
   };
 
+  // 保存到后端
   const handleSave = () => {
-    if (!selectedTemplate) return;
-    const updated = {
-      ...customTemplates,
-      [selectedTemplate.id]: {
-        css: editingCss,
-        html: editingHtml,
-        name: editingName,
-        description: editingDesc,
-      },
-    };
-    setCustomTemplates(updated);
-    localStorage.setItem("erpPrintTemplates", JSON.stringify(updated));
-    setEditOpen(false);
-    toast.success("模板已保存");
+    if (!selectedKey) return;
+    const def = getTemplateDefinition(selectedKey);
+    if (!def) return;
+    upsertMutation.mutate({
+      templateKey: selectedKey,
+      name: editingName,
+      description: editingDesc,
+      module: def.module,
+      htmlContent: editingHtml,
+      cssContent: editingCss,
+      paperSize: editingPaperSize,
+      orientation: editingOrientation,
+      marginTop: editingMargins.top,
+      marginRight: editingMargins.right,
+      marginBottom: editingMargins.bottom,
+      marginLeft: editingMargins.left,
+    });
   };
 
+  // 恢复默认
   const handleReset = () => {
-    if (!selectedTemplate) return;
-    const updated = { ...customTemplates };
-    delete updated[selectedTemplate.id];
-    setCustomTemplates(updated);
-    localStorage.setItem("erpPrintTemplates", JSON.stringify(updated));
-    setEditingCss(selectedTemplate.defaultCss);
-    setEditingHtml(selectedTemplate.defaultHtml);
-    setEditingName(selectedTemplate.name);
-    setEditingDesc(selectedTemplate.description);
-    toast.success("已恢复默认模板");
+    if (!selectedKey) return;
+    const def = getTemplateDefinition(selectedKey);
+    if (!def) return;
+    // 删除后端记录
+    deleteMutation.mutate({ templateKey: selectedKey });
+    // 恢复编辑器内容
+    setEditingHtml(def.defaultHtml);
+    setEditingCss(def.defaultCss);
+    setEditingName(def.name);
+    setEditingDesc(def.description || "");
+    setEditingPaperSize("A4");
+    setEditingOrientation("portrait");
+    setEditingMargins({ top: 20, right: 20, bottom: 20, left: 20 });
   };
 
-  const isCustomized = (id: string) => !!customTemplates[id];
+  // 复制变量到剪贴板
+  const copyVariable = (varKey: string) => {
+    navigator.clipboard.writeText(`{{${varKey}}}`);
+    toast.success(`已复制 {{${varKey}}}`);
+  };
 
   // 按模块分组
-  const moduleGroups: Record<string, { label: string; templates: PrintTemplateItem[] }> = {};
-  for (const t of PRINT_TEMPLATES) {
-    if (!moduleGroups[t.module]) {
-      moduleGroups[t.module] = { label: t.moduleLabel, templates: [] };
+  const moduleGroups = useMemo(() => {
+    const groups: Record<string, typeof TEMPLATE_DEFINITIONS> = {};
+    for (const def of TEMPLATE_DEFINITIONS) {
+      if (!groups[def.module]) groups[def.module] = [];
+      groups[def.module].push(def);
     }
-    moduleGroups[t.module].templates.push(t);
-  }
+    return groups;
+  }, []);
+
+  const selectedDef = selectedKey ? getTemplateDefinition(selectedKey) : null;
 
   return (
     <ERPLayout>
@@ -507,54 +276,54 @@ export default function PrintTemplatesPage() {
           <div>
             <h1 className="text-xl font-bold">打印模板管理</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              管理系统中所有可打印表单的模板样式，支持自定义 HTML 和 CSS
+              所见即所得 — 编辑器中的预览效果与实际打印输出完全一致
             </p>
           </div>
         </div>
 
-        {/* 说明卡片 */}
+        {/* 使用说明 */}
         <Card className="mb-6 border-blue-200 bg-blue-50">
           <CardContent className="pt-4 pb-3">
             <div className="flex gap-3 text-sm text-blue-800">
               <FileText className="h-4 w-4 mt-0.5 shrink-0" />
               <div>
-                <span className="font-medium">模板变量说明：</span>
-                使用 <code className="bg-blue-100 px-1 rounded">{"{{字段名}}"}</code> 引用数据字段，
-                <code className="bg-blue-100 px-1 rounded">{"{{companyName}}"}</code> 和
-                <code className="bg-blue-100 px-1 rounded">{"{{companyLogo}}"}</code> 会自动读取公司信息，
-                <code className="bg-blue-100 px-1 rounded">{"{{itemRows}}"}</code> 用于渲染表格明细行。
-                模板当前保存在本地，后期将支持云端同步。
+                <span className="font-medium">模板语法说明：</span>
+                使用 <code className="bg-blue-100 px-1 rounded">{"{{变量名}}"}</code> 插入数据，
+                <code className="bg-blue-100 px-1 rounded">{"{{#each items}}...{{/each}}"}</code> 循环明细行，
+                <code className="bg-blue-100 px-1 rounded">{"{{#if 变量}}...{{/if}}"}</code> 条件显示，
+                <code className="bg-blue-100 px-1 rounded">{"{{金额 | currency}}"}</code> 格式化为货币。
+                模板数据保存在服务器，多端同步。
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* 按模块分组展示 */}
-        {Object.entries(moduleGroups).map(([moduleId, group]) => (
+        {Object.entries(moduleGroups).map(([moduleId, templates]) => (
           <div key={moduleId} className="mb-8">
             <div className="flex items-center gap-2 mb-3">
-              <h2 className="text-base font-semibold">{group.label}</h2>
-              <Badge variant="secondary" className="text-xs">{group.templates.length} 个模板</Badge>
+              <h2 className="text-base font-semibold">{MODULE_LABELS[moduleId] || moduleId}</h2>
+              <Badge variant="secondary" className="text-xs">{templates.length} 个模板</Badge>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {group.templates.map((t) => {
-                const Icon = t.icon;
-                const customized = isCustomized(t.id);
-                const tpl = getTemplate(t);
+              {templates.map((def) => {
+                const Icon = ICON_MAP[def.templateKey] || FileText;
+                const color = COLOR_MAP[def.module] || "bg-gray-50 border-gray-200 text-gray-700";
+                const content = getTemplateContent(def.templateKey);
                 return (
-                  <Card key={t.id} className={`border transition-shadow hover:shadow-md`}>
+                  <Card key={def.templateKey} className="border transition-shadow hover:shadow-md">
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-2">
-                          <div className={`p-2 rounded-lg border ${t.color}`}>
+                          <div className={`p-2 rounded-lg border ${color}`}>
                             <Icon className="h-4 w-4" />
                           </div>
                           <div>
-                            <CardTitle className="text-sm font-semibold">{tpl.name}</CardTitle>
-                            <p className="text-xs text-muted-foreground mt-0.5">{t.moduleLabel}</p>
+                            <CardTitle className="text-sm font-semibold">{content.name}</CardTitle>
+                            <p className="text-xs text-muted-foreground mt-0.5">{MODULE_LABELS[def.module]}</p>
                           </div>
                         </div>
-                        {customized && (
+                        {content.isCustomized && (
                           <Badge variant="outline" className="text-xs border-amber-300 text-amber-600 bg-amber-50">
                             已自定义
                           </Badge>
@@ -562,18 +331,18 @@ export default function PrintTemplatesPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="pt-0">
-                      <p className="text-xs text-muted-foreground mb-3 leading-relaxed">{tpl.description}</p>
+                      <p className="text-xs text-muted-foreground mb-3 leading-relaxed">{content.description}</p>
                       <div className="mb-3">
-                        <p className="text-xs font-medium text-muted-foreground mb-1.5">包含字段：</p>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5">可用变量：</p>
                         <div className="flex flex-wrap gap-1">
-                          {t.fields.slice(0, 5).map((f) => (
-                            <Badge key={f.key} variant="secondary" className="text-xs px-1.5 py-0">
-                              {f.label}
+                          {def.variables.filter(v => !v.key.startsWith("company.") && v.key !== "printTime" && v.key !== "printDate").slice(0, 5).map((v) => (
+                            <Badge key={v.key} variant="secondary" className="text-xs px-1.5 py-0">
+                              {v.label}
                             </Badge>
                           ))}
-                          {t.fields.length > 5 && (
+                          {def.variables.filter(v => !v.key.startsWith("company.") && v.key !== "printTime" && v.key !== "printDate").length > 5 && (
                             <Badge variant="secondary" className="text-xs px-1.5 py-0 text-muted-foreground">
-                              +{t.fields.length - 5}
+                              +{def.variables.filter(v => !v.key.startsWith("company.") && v.key !== "printTime" && v.key !== "printDate").length - 5}
                             </Badge>
                           )}
                         </div>
@@ -581,17 +350,9 @@ export default function PrintTemplatesPage() {
                       <Separator className="mb-3" />
                       <div className="flex gap-2">
                         <Button
-                          variant="outline"
                           size="sm"
                           className="flex-1 h-8 text-xs"
-                          onClick={() => handlePreview(t)}
-                        >
-                          <Eye className="h-3.5 w-3.5 mr-1" /> 预览
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="flex-1 h-8 text-xs"
-                          onClick={() => handleEdit(t)}
+                          onClick={() => handleEdit(def.templateKey)}
                         >
                           <Edit className="h-3.5 w-3.5 mr-1" /> 编辑模板
                         </Button>
@@ -604,139 +365,231 @@ export default function PrintTemplatesPage() {
           </div>
         ))}
 
-        {/* 编辑模板对话框 */}
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        {/* ==================== 编辑器对话框 ==================== */}
+        <Dialog open={editOpen} onOpenChange={(open) => { if (!open) { setEditOpen(false); setEditFullscreen(false); } }}>
+          <DialogContent className={editFullscreen ? "max-w-[98vw] w-[98vw] max-h-[98vh] h-[98vh]" : "max-w-[95vw] w-[1400px] max-h-[92vh]"}>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Edit className="h-4 w-4" />
-                编辑打印模板 — {selectedTemplate?.name}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-sm">模板名称</Label>
-                  <Input
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    placeholder="模板名称"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-sm">模板描述</Label>
-                  <Input
-                    value={editingDesc}
-                    onChange={(e) => setEditingDesc(e.target.value)}
-                    placeholder="模板描述"
-                  />
+              <div className="flex items-center justify-between">
+                <DialogTitle className="flex items-center gap-2">
+                  <Edit className="h-4 w-4" />
+                  编辑打印模板 — {editingName}
+                </DialogTitle>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditFullscreen(!editFullscreen)}>
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
+            </DialogHeader>
 
-              {/* 字段说明 */}
-              {selectedTemplate && (
-                <div className="bg-muted/50 rounded-lg p-3">
-                  <p className="text-xs font-medium mb-2">可用字段变量：</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedTemplate.fields.map((f) => (
-                      <div key={f.key} className="group relative">
-                        <Badge
-                          variant="outline"
-                          className="text-xs cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`{{${f.key}}}`);
-                            toast.success(`已复制 {{${f.key}}}`);
-                          }}
-                        >
-                          {`{{${f.key}}}`}
-                        </Badge>
+            <div className="flex gap-4" style={{ height: editFullscreen ? "calc(98vh - 140px)" : "calc(92vh - 160px)" }}>
+              {/* 左侧：编辑器 */}
+              <div className="flex-1 flex flex-col min-w-0">
+                {/* 基本信息 */}
+                <div className="grid grid-cols-4 gap-3 mb-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">模板名称</Label>
+                    <Input value={editingName} onChange={(e) => setEditingName(e.target.value)} className="h-8 text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">纸张大小</Label>
+                    <Select value={editingPaperSize} onValueChange={setEditingPaperSize}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="A4">A4</SelectItem>
+                        <SelectItem value="A5">A5</SelectItem>
+                        <SelectItem value="Letter">Letter</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">打印方向</Label>
+                    <Select value={editingOrientation} onValueChange={setEditingOrientation}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="portrait">纵向</SelectItem>
+                        <SelectItem value="landscape">横向</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">页边距 (上/右/下/左)</Label>
+                    <div className="flex gap-1">
+                      {(["top", "right", "bottom", "left"] as const).map((side) => (
+                        <Input
+                          key={side}
+                          type="number"
+                          value={editingMargins[side]}
+                          onChange={(e) => setEditingMargins(prev => ({ ...prev, [side]: parseInt(e.target.value) || 0 }))}
+                          className="h-8 text-xs w-14 text-center"
+                          min={0}
+                          max={100}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 编辑器标签页 */}
+                <Tabs value={editorTab} onValueChange={setEditorTab} className="flex-1 flex flex-col min-h-0">
+                  <TabsList className="h-8 w-fit">
+                    <TabsTrigger value="html" className="text-xs gap-1 h-7"><Code className="h-3 w-3" /> HTML 模板</TabsTrigger>
+                    <TabsTrigger value="css" className="text-xs gap-1 h-7"><Palette className="h-3 w-3" /> CSS 样式</TabsTrigger>
+                    <TabsTrigger value="variables" className="text-xs gap-1 h-7"><Settings2 className="h-3 w-3" /> 可用变量</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="html" className="flex-1 mt-2 min-h-0">
+                    <Textarea
+                      value={editingHtml}
+                      onChange={(e) => setEditingHtml(e.target.value)}
+                      className="font-mono text-xs h-full resize-none"
+                      placeholder="在此编写 HTML 模板..."
+                      spellCheck={false}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="css" className="flex-1 mt-2 min-h-0">
+                    <Textarea
+                      value={editingCss}
+                      onChange={(e) => setEditingCss(e.target.value)}
+                      className="font-mono text-xs h-full resize-none"
+                      placeholder="在此编写 CSS 样式..."
+                      spellCheck={false}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="variables" className="flex-1 mt-2 min-h-0 overflow-y-auto">
+                    {selectedDef && (
+                      <div className="space-y-4">
+                        {/* 公司变量 */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-muted-foreground mb-2">公司信息变量</h4>
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedDef.variables.filter(v => v.key.startsWith("company.") || v.key === "printTime" || v.key === "printDate").map((v) => (
+                              <Badge
+                                key={v.key}
+                                variant="outline"
+                                className="text-xs cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                                onClick={() => copyVariable(v.key)}
+                              >
+                                <Copy className="h-2.5 w-2.5 mr-1" />
+                                {`{{${v.key}}}`} <span className="ml-1 text-muted-foreground">{v.label}</span>
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 业务变量 */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-muted-foreground mb-2">业务数据变量</h4>
+                          <div className="space-y-2">
+                            {selectedDef.variables.filter(v => !v.key.startsWith("company.") && v.key !== "printTime" && v.key !== "printDate").map((v) => (
+                              <div key={v.key} className="flex items-start gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
+                                  onClick={() => copyVariable(v.key)}
+                                >
+                                  <Copy className="h-2.5 w-2.5 mr-1" />
+                                  {`{{${v.key}}}`}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">{v.label}</span>
+                                {v.type === "number" && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    支持 | currency / decimal2
+                                  </Badge>
+                                )}
+                                {v.type === "array" && v.children && (
+                                  <div className="ml-4 mt-1">
+                                    <p className="text-xs text-muted-foreground mb-1">
+                                      使用 <code className="bg-muted px-1 rounded">{`{{#each ${v.key}}}...{{/each}}`}</code> 循环，子变量：
+                                    </p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {v.children.map((c) => (
+                                        <Badge
+                                          key={c.key}
+                                          variant="secondary"
+                                          className="text-xs cursor-pointer"
+                                          onClick={() => { navigator.clipboard.writeText(`{{${c.key}}}`); toast.success(`已复制 {{${c.key}}}`); }}
+                                        >
+                                          {`{{${c.key}}}`} {c.label}
+                                        </Badge>
+                                      ))}
+                                      <Badge variant="secondary" className="text-xs">
+                                        {"{{@number}}"} 序号
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 语法参考 */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-muted-foreground mb-2">语法参考</h4>
+                          <div className="bg-muted/50 rounded-lg p-3 text-xs font-mono space-y-1">
+                            <div><span className="text-blue-600">{"{{变量名}}"}</span> — 输出变量值</div>
+                            <div><span className="text-blue-600">{"{{金额 | currency}}"}</span> — 格式化为 ¥1,000.00</div>
+                            <div><span className="text-blue-600">{"{{数值 | decimal2}}"}</span> — 保留2位小数</div>
+                            <div><span className="text-blue-600">{"{{百分比 | percent}}"}</span> — 格式化为 65.0%</div>
+                            <div><span className="text-green-600">{"{{#each items}}"}...{"{{/each}}"}</span> — 循环数组</div>
+                            <div><span className="text-green-600">{"{{@number}}"}</span> — 循环序号（从1开始）</div>
+                            <div><span className="text-purple-600">{"{{#if 变量}}"}...{"{{else}}"}...{"{{/if}}"}</span> — 条件判断</div>
+                          </div>
+                        </div>
                       </div>
-                    ))}
-                    <Badge variant="outline" className="text-xs cursor-pointer hover:bg-primary hover:text-primary-foreground" onClick={() => { navigator.clipboard.writeText("{{companyName}}"); toast.success("已复制"); }}>
-                      {"{{companyName}}"}
-                    </Badge>
-                    <Badge variant="outline" className="text-xs cursor-pointer hover:bg-primary hover:text-primary-foreground" onClick={() => { navigator.clipboard.writeText("{{companyLogo}}"); toast.success("已复制"); }}>
-                      {"{{companyLogo}}"}
-                    </Badge>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </div>
+
+              {/* 右侧：实时预览 */}
+              <div className="w-[480px] flex flex-col shrink-0 border rounded-lg overflow-hidden">
+                <div className="bg-muted px-3 py-2 text-xs text-muted-foreground flex items-center justify-between border-b">
+                  <span className="flex items-center gap-1.5">
+                    <Eye className="h-3.5 w-3.5" />
+                    实时预览（示例数据）
+                  </span>
+                  <div className="flex gap-1.5">
+                    <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={handlePreviewPrint}>
+                      <Printer className="h-3 w-3 mr-1" /> 打印预览
+                    </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1.5">点击变量可复制到剪贴板</p>
                 </div>
-              )}
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">HTML 模板</Label>
-                <Textarea
-                  value={editingHtml}
-                  onChange={(e) => setEditingHtml(e.target.value)}
-                  className="font-mono text-xs min-h-[200px]"
-                  placeholder="HTML 模板内容..."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm">CSS 样式</Label>
-                <Textarea
-                  value={editingCss}
-                  onChange={(e) => setEditingCss(e.target.value)}
-                  className="font-mono text-xs min-h-[150px]"
-                  placeholder="CSS 样式..."
-                />
-              </div>
-            </div>
-            <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5">
-                <RotateCcw className="h-3.5 w-3.5" /> 恢复默认
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setEditOpen(false)}>取消</Button>
-              <Button size="sm" onClick={handleSave} className="gap-1.5">
-                <Save className="h-3.5 w-3.5" /> 保存模板
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* 预览对话框 */}
-        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Eye className="h-4 w-4" />
-                模板预览 — {selectedTemplate && getTemplate(selectedTemplate).name}
-              </DialogTitle>
-            </DialogHeader>
-            {selectedTemplate && (() => {
-              const tpl = getTemplate(selectedTemplate);
-              return (
-                <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
-                  <div className="bg-muted px-3 py-2 text-xs text-muted-foreground flex items-center justify-between">
-                    <span>打印预览（示例数据）</span>
-                    <Badge variant="secondary" className="text-xs">{selectedTemplate.moduleLabel}</Badge>
-                  </div>
-                  <div className="p-4 bg-white">
-                    <style dangerouslySetInnerHTML={{ __html: tpl.css }} />
-                    <div
-                      dangerouslySetInnerHTML={{
-                        __html: tpl.html
-                          .replace(/\{\{companyName\}\}/g, "示例医疗器械有限公司")
-                          .replace(/\{\{companyLogo\}\}/g, '<div style="width:50px;height:50px;background:#e5e7eb;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#9ca3af;">LOGO</div>')
-                          .replace(/\{\{itemRows\}\}/g, '<tr><td>示例产品</td><td>SP-001</td><td>规格A</td><td>100</td><td>¥50.00</td><td>¥5000.00</td></tr>')
-                          .replace(/\{\{(\w+)\}\}/g, (_, key) => {
-                            const field = selectedTemplate.fields.find(f => f.key === key);
-                            if (!field) return `[${key}]`;
-                            if (field.type === "date") return "2026-03-08";
-                            if (field.type === "number") return "1000.00";
-                            return `示例${field.label}`;
-                          })
+                <div className="flex-1 bg-gray-100 overflow-auto p-3">
+                  <div className="bg-white shadow-md mx-auto" style={{
+                    width: editingOrientation === "landscape" ? "420px" : "340px",
+                    minHeight: editingOrientation === "landscape" ? "240px" : "480px",
+                    transform: "scale(1)",
+                    transformOrigin: "top center",
+                  }}>
+                    <iframe
+                      ref={previewRef}
+                      className="w-full border-0"
+                      style={{
+                        height: editingOrientation === "landscape" ? "600px" : "900px",
+                        transform: editingOrientation === "landscape" ? "scale(0.7)" : "scale(0.7)",
+                        transformOrigin: "top left",
+                        width: "142.8%",
                       }}
+                      title="打印预览"
+                      sandbox="allow-same-origin"
                     />
                   </div>
                 </div>
-              );
-            })()}
-            <DialogFooter>
-              <Button variant="outline" size="sm" onClick={() => { setPreviewOpen(false); if (selectedTemplate) handleEdit(selectedTemplate); }}>
-                <Edit className="h-3.5 w-3.5 mr-1" /> 编辑此模板
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 mt-2">
+              <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 mr-auto">
+                <RotateCcw className="h-3.5 w-3.5" /> 恢复默认
               </Button>
-              <Button size="sm" onClick={() => setPreviewOpen(false)}>关闭</Button>
+              <Button variant="outline" size="sm" onClick={() => { setEditOpen(false); setEditFullscreen(false); }}>取消</Button>
+              <Button size="sm" onClick={handleSave} className="gap-1.5" disabled={upsertMutation.isPending}>
+                <Save className="h-3.5 w-3.5" /> {upsertMutation.isPending ? "保存中..." : "保存模板"}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

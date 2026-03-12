@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
-import { SalesOrderPrint, DeliveryNotePrint, ReceiptPrint } from "@/components/print";
+import { usePrintTemplate } from "@/hooks/usePrintTemplate";
 import {
   PAYMENT_CONDITION_OPTIONS,
   normalizePaymentCondition,
@@ -222,10 +222,7 @@ export default function SalesOrdersPage() {
   const [approvalHistoryOpen, setApprovalHistoryOpen]       = useState(false);
   const [approvalHistoryOrderId, setApprovalHistoryOrderId] = useState<number | null>(null);
 
-  const [printOrderOpen, setPrintOrderOpen]       = useState(false);
-  const [printDeliveryOpen, setPrintDeliveryOpen] = useState(false);
-  const [printReceiptOpen, setPrintReceiptOpen]   = useState(false);
-  const [printRecord, setPrintRecord]             = useState<SalesOrder | null>(null);
+  const { print: templatePrint } = usePrintTemplate();
 
   const [formData, setFormData] = useState({
     customerId:      0,
@@ -1452,20 +1449,68 @@ export default function SalesOrdersPage() {
                   <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
                     <div className="flex gap-2 flex-wrap">
                       <Button variant="outline" size="sm" onClick={() => {
-                        setPrintRecord({ ...selectedRecord, products: detailProducts });
-                        setPrintOrderOpen(true);
+                        templatePrint("sales_order", {
+                          orderNumber:    selectedRecord.orderNo,
+                          orderDate:      formatDate(selectedRecord.orderDate),
+                          deliveryDate:   formatDate(selectedRecord.deliveryDate),
+                          customerName:   selectedRecord.customerName  ?? "",
+                          shippingAddress: selectedRecord.shippingAddress ?? "",
+                          shippingContact: selectedRecord.contactPerson  ?? "",
+                          shippingPhone:   selectedRecord.phone          ?? "",
+                          paymentMethod:   normalizePaymentCondition(selectedRecord.paymentMethod ?? ""),
+                          status:          statusMap[selectedRecord.status ?? ""]?.label ?? selectedRecord.status ?? "",
+                          totalAmount:     parseFloat(selectedRecord.totalAmount ?? "0"),
+                          items: detailProducts.map(p => ({
+                            productName:   p.name,
+                            productCode:   p.code,
+                            specification: p.spec,
+                            quantity:      p.quantity,
+                            unitPrice:     p.price,
+                            amount:        p.amount ?? 0,
+                          })),
+                          notes:          stripPrepayRatioFromRemark(selectedRecord.remark),
+                        });
                       }}>
                         <Printer className="h-4 w-4 mr-1.5" />打印订单
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => {
-                        setPrintRecord({ ...selectedRecord, products: detailProducts });
-                        setPrintDeliveryOpen(true);
+                        templatePrint("delivery_note", {
+                          orderNumber:    selectedRecord.orderNo,
+                          deliveryDate:   formatDate(selectedRecord.deliveryDate),
+                          customerName:   selectedRecord.customerName  ?? "",
+                          shippingAddress: selectedRecord.shippingAddress ?? "",
+                          shippingContact: selectedRecord.contactPerson  ?? "",
+                          shippingPhone:   selectedRecord.phone          ?? "",
+                          items: detailProducts.map(p => ({
+                            productName:   p.name,
+                            productCode:   p.code,
+                            specification: p.spec,
+                            quantity:      p.quantity,
+                            unit:          p.unit,
+                          })),
+                          notes: stripPrepayRatioFromRemark(selectedRecord.remark),
+                        });
                       }}>
                         <Truck className="h-4 w-4 mr-1.5" />打印发货单
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => {
-                        setPrintRecord({ ...selectedRecord, products: detailProducts });
-                        setPrintReceiptOpen(true);
+                        templatePrint("receipt", {
+                          receiptNumber: `RC-${selectedRecord.orderNo.replace("SO-", "")}`,
+                          receiptDate:   new Date().toISOString().split("T")[0],
+                          orderNumber:   selectedRecord.orderNo,
+                          customerName:  selectedRecord.customerName ?? "",
+                          paymentMethod: normalizePaymentCondition(selectedRecord.paymentMethod ?? ""),
+                          totalAmount:   parseFloat(selectedRecord.totalAmount ?? "0"),
+                          paidAmount:    parseFloat(selectedRecord.totalAmount ?? "0"),
+                          remainingAmount: 0,
+                          items: detailProducts.map(p => ({
+                            productName: p.name,
+                            quantity:    p.quantity,
+                            unitPrice:   p.price,
+                            amount:      p.amount ?? 0,
+                          })),
+                          notes: stripPrepayRatioFromRemark(selectedRecord.remark),
+                        });
                       }}>
                         <FileText className="h-4 w-4 mr-1.5" />打印收据
                       </Button>
@@ -1610,79 +1655,7 @@ export default function SalesOrdersPage() {
           </DialogContent>
         </Dialog>
 
-        {/* ==================== 打印对话框 ==================== */}
-        {printRecord && (
-          <>
-            <SalesOrderPrint
-              open={printOrderOpen}
-              onClose={() => setPrintOrderOpen(false)}
-              order={{
-                orderNumber:    printRecord.orderNo,
-                orderDate:      formatDate(printRecord.orderDate),
-                deliveryDate:   formatDate(printRecord.deliveryDate),
-                customerName:   printRecord.customerName  ?? "",
-                shippingAddress: printRecord.shippingAddress ?? "",
-                shippingContact: printRecord.contactPerson  ?? "",
-                shippingPhone:   printRecord.phone          ?? "",
-                paymentMethod:   printRecord.paymentMethod  ?? "",
-                status:          printRecord.status         ?? "",
-                totalAmount:     parseFloat(printRecord.totalAmount ?? "0"),
-                items: printRecord.products.map(p => ({
-                  productName:   p.name,
-                  productCode:   p.code,
-                  specification: p.spec,
-                  quantity:      p.quantity,
-                  unitPrice:     p.price,
-                  amount:        p.amount ?? 0,
-                })),
-                notes:          printRecord.remark ?? "",
-                salesPersonName: "",
-              }}
-            />
-            <DeliveryNotePrint
-              open={printDeliveryOpen}
-              onClose={() => setPrintDeliveryOpen(false)}
-              order={{
-                orderNumber:    printRecord.orderNo,
-                deliveryDate:   formatDate(printRecord.deliveryDate),
-                customerName:   printRecord.customerName  ?? "",
-                shippingAddress: printRecord.shippingAddress ?? "",
-                shippingContact: printRecord.contactPerson  ?? "",
-                shippingPhone:   printRecord.phone          ?? "",
-                items: printRecord.products.map(p => ({
-                  productName:   p.name,
-                  productCode:   p.code,
-                  specification: p.spec,
-                  quantity:      p.quantity,
-                  unit:          p.unit,
-                })),
-                notes: printRecord.remark ?? "",
-              }}
-            />
-            <ReceiptPrint
-              open={printReceiptOpen}
-              onClose={() => setPrintReceiptOpen(false)}
-              receipt={{
-                receiptNumber: `RC-${printRecord.orderNo.replace("SO-", "")}`,
-                receiptDate:   new Date().toISOString().split("T")[0],
-                orderNumber:   printRecord.orderNo,
-                customerName:  printRecord.customerName ?? "",
-                paymentMethod: printRecord.paymentMethod ?? "",
-                totalAmount:   parseFloat(printRecord.totalAmount ?? "0"),
-                paidAmount:    parseFloat(printRecord.totalAmount ?? "0"),
-                remainingAmount: 0,
-                items: printRecord.products.map(p => ({
-                  productName: p.name,
-                  quantity:    p.quantity,
-                  unitPrice:   p.price,
-                  amount:      p.amount ?? 0,
-                })),
-                notes:   printRecord.remark ?? "",
-                cashier: "",
-              }}
-            />
-          </>
-        )}
+        {/* 打印已通过统一打印引擎 (usePrintTemplate) 实现，无需对话框 */}
       </div>
     </ERPLayout>
   );

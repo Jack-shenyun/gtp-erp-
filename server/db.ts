@@ -60,6 +60,7 @@ import {
   goodsReceipts, goodsReceiptItems,
   inspectionRequirements, inspectionRequirementItems,
   iqcInspections, iqcInspectionItems,
+  printTemplates, InsertPrintTemplate, PrintTemplate,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -6020,4 +6021,119 @@ export async function ensureEmailTables(dbArg?: ReturnType<typeof drizzle> | nul
   `);
 
   emailTablesReady = true;
+}
+
+
+// ==================== 打印模板 CRUD ====================
+let printTemplatesTableReady = false;
+async function ensurePrintTemplatesTable(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || printTemplatesTableReady) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS print_templates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      templateKey VARCHAR(64) NOT NULL UNIQUE,
+      name VARCHAR(100) NOT NULL,
+      description TEXT,
+      module VARCHAR(50) NOT NULL,
+      htmlContent TEXT NOT NULL,
+      cssContent TEXT,
+      paperSize VARCHAR(20) DEFAULT 'A4',
+      orientation VARCHAR(20) DEFAULT 'portrait',
+      marginTop INT DEFAULT 20,
+      marginRight INT DEFAULT 20,
+      marginBottom INT DEFAULT 20,
+      marginLeft INT DEFAULT 20,
+      createdBy INT,
+      updatedBy INT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  printTemplatesTableReady = true;
+}
+
+export async function getPrintTemplates(params?: { module?: string }): Promise<PrintTemplate[]> {
+  const db = await getDb();
+  if (!db) return [];
+  await ensurePrintTemplatesTable(db);
+  const conditions: any[] = [];
+  if (params?.module) conditions.push(eq(printTemplates.module, params.module));
+  const rows = conditions.length > 0
+    ? await db.select().from(printTemplates).where(and(...conditions)).orderBy(asc(printTemplates.module), asc(printTemplates.name))
+    : await db.select().from(printTemplates).orderBy(asc(printTemplates.module), asc(printTemplates.name));
+  return rows;
+}
+
+export async function getPrintTemplateByKey(templateKey: string): Promise<PrintTemplate | null> {
+  const db = await getDb();
+  if (!db) return null;
+  await ensurePrintTemplatesTable(db);
+  const rows = await db.select().from(printTemplates).where(eq(printTemplates.templateKey, templateKey)).limit(1);
+  return rows[0] || null;
+}
+
+export async function upsertPrintTemplate(data: {
+  templateKey: string;
+  name: string;
+  description?: string;
+  module: string;
+  htmlContent: string;
+  cssContent?: string;
+  paperSize?: string;
+  orientation?: string;
+  marginTop?: number;
+  marginRight?: number;
+  marginBottom?: number;
+  marginLeft?: number;
+  updatedBy?: number;
+}): Promise<PrintTemplate> {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensurePrintTemplatesTable(db);
+  const existing = await db.select().from(printTemplates).where(eq(printTemplates.templateKey, data.templateKey)).limit(1);
+  if (existing[0]) {
+    await db.update(printTemplates).set({
+      name: data.name,
+      description: data.description,
+      htmlContent: data.htmlContent,
+      cssContent: data.cssContent,
+      paperSize: data.paperSize,
+      orientation: data.orientation,
+      marginTop: data.marginTop,
+      marginRight: data.marginRight,
+      marginBottom: data.marginBottom,
+      marginLeft: data.marginLeft,
+      updatedBy: data.updatedBy,
+    }).where(eq(printTemplates.id, existing[0].id));
+    const updated = await db.select().from(printTemplates).where(eq(printTemplates.id, existing[0].id)).limit(1);
+    return updated[0];
+  } else {
+    const result = await db.insert(printTemplates).values({
+      templateKey: data.templateKey,
+      name: data.name,
+      description: data.description,
+      module: data.module,
+      htmlContent: data.htmlContent,
+      cssContent: data.cssContent,
+      paperSize: data.paperSize,
+      orientation: data.orientation,
+      marginTop: data.marginTop,
+      marginRight: data.marginRight,
+      marginBottom: data.marginBottom,
+      marginLeft: data.marginLeft,
+      createdBy: data.updatedBy,
+      updatedBy: data.updatedBy,
+    } as InsertPrintTemplate);
+    const insertedId = Number(result[0]?.insertId || 0);
+    const inserted = await db.select().from(printTemplates).where(eq(printTemplates.id, insertedId)).limit(1);
+    return inserted[0];
+  }
+}
+
+export async function deletePrintTemplate(templateKey: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensurePrintTemplatesTable(db);
+  await db.delete(printTemplates).where(eq(printTemplates.templateKey, templateKey));
 }

@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
+import { usePrintTemplate } from "@/hooks/usePrintTemplate";
 
 type OrderType = "finished" | "semi_finished" | "rework";
 
@@ -151,6 +152,7 @@ export default function ProductionOrdersPage() {
   const [selectedRecord, setSelectedRecord] = useState<ProductionOrderRow | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const { canDelete } = usePermission();
+  const { print: templatePrint } = usePrintTemplate();
 
   // 弹窗选择器状态
   const [planPickerOpen, setPlanPickerOpen] = useState(false);
@@ -1114,7 +1116,32 @@ export default function ProductionOrdersPage() {
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-          <Button variant="outline" size="sm" onClick={() => handlePrint(selectedRecord)}>🖨️ 打印</Button>
+          <Button variant="outline" size="sm" onClick={() => {
+            const product = (productsData as any[]).find((p: any) => p.id === selectedRecord.productId);
+            const progress = selectedRecord.plannedQty ? ((Number(selectedRecord.completedQty || 0) / Number(selectedRecord.plannedQty)) * 100).toFixed(1) : '0.0';
+            templatePrint("production_order", {
+              orderNo:          selectedRecord.orderNo,
+              orderType:        orderTypeMap[selectedRecord.orderType]?.label || selectedRecord.orderType,
+              status:           statusMap[selectedRecord.status]?.label || selectedRecord.status,
+              productName:      selectedRecord.productName || '-',
+              productCode:      selectedRecord.productCode || '-',
+              productSpec:      selectedRecord.productSpec || product?.specification || '-',
+              batchNo:          selectedRecord.batchNo || '-',
+              planNo:           (selectedRecord as any).planNo || selectedRecord.planId || '-',
+              plannedQty:       selectedRecord.plannedQty,
+              completedQty:     selectedRecord.completedQty || '0',
+              unit:             selectedRecord.unit || '',
+              progress:         progress,
+              plannedStartDate: fmtDate(selectedRecord.plannedStartDate),
+              plannedEndDate:   fmtDate(selectedRecord.plannedEndDate),
+              productionDate:   fmtDate(selectedRecord.productionDate),
+              actualStartDate:  fmtDate(selectedRecord.actualStartDate),
+              actualEndDate:    fmtDate(selectedRecord.actualEndDate),
+              expiryDate:       fmtDate(selectedRecord.expiryDate),
+              productDescription: product?.description || '',
+              remark:           selectedRecord.remark || '',
+            });
+          }}>🖨️ 打印</Button>
           <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
           {canDelete && (
             <Button variant="destructive" size="sm" onClick={() => handleDelete(selectedRecord)}>删除</Button>

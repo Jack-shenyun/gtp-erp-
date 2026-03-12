@@ -1967,3 +1967,30 @@ export const companyUserAccess = mysqlTable("company_user_access", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type CompanyUserAccess = typeof companyUserAccess.$inferSelect;
+
+// ==================== 打印模板管理 ====================
+/**
+ * 打印模板表：存储各业务模块的自定义打印模板（HTML + CSS）
+ * 每个 templateKey 对应一种业务单据类型，同一 key 只保留一条自定义记录
+ */
+export const printTemplates = mysqlTable("print_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  templateKey: varchar("templateKey", { length: 64 }).notNull().unique(),  // 模板唯一标识，如 sales_order / delivery_note
+  name: varchar("name", { length: 100 }).notNull(),                       // 模板显示名称
+  description: text("description"),                                        // 模板描述
+  module: varchar("module", { length: 50 }).notNull(),                    // 所属模块：sales / purchase / production / quality / udi
+  htmlContent: text("htmlContent").notNull(),                              // HTML 模板内容
+  cssContent: text("cssContent"),                                          // CSS 样式内容
+  paperSize: varchar("paperSize", { length: 20 }).default("A4"),          // 纸张大小：A4 / A5 / custom
+  orientation: varchar("orientation", { length: 20 }).default("portrait"), // 方向：portrait / landscape
+  marginTop: int("marginTop").default(20),
+  marginRight: int("marginRight").default(20),
+  marginBottom: int("marginBottom").default(20),
+  marginLeft: int("marginLeft").default(20),
+  createdBy: int("createdBy"),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type PrintTemplate = typeof printTemplates.$inferSelect;
+export type InsertPrintTemplate = typeof printTemplates.$inferInsert;
